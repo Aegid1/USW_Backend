@@ -1,1 +1,10 @@
 services:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    volumes:
+      - ./db/storage/:/chroma/chroma
+    ports:
+      - "8000:8000"
+    environment:
+      - STORAGE_PATH=/storage

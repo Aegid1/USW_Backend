@@ -1,2 +1,7 @@
 # USW_Backend
-backend for USW media compass project
+Backend for USW media compass project
+
+# Guidelines
+
+
+# How to start
