@@ -1,8 +1,13 @@
 from fastapi import APIRouter, Depends
 from chromadb.utils import embedding_functions
 from app.services.MediaService import MediaService
+from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class Query(BaseModel):
+    query: str
 
 
 def get_media_service():
@@ -62,7 +67,8 @@ def add_multiple_articles_to_collection(articles, collection_name, media_service
     collection = media_service.get_collection(collection_name)
     media_service.store_multiple_articles(collection, articles)
 
-# vielleicht hier aber @PostMapping, weil man query übergibt
-@router.get("/articles/{collection_name}/{number_of_articles}", status_code=200)
-def get_articles_from_collection(number_of_articles, collection_name, query, media_service: MediaService = Depends()):
-    return media_service.get_articles(number_of_articles, collection_name, query)
+
+# only useful for development purposes, will be deleted in the end
+@router.post("/articles/{collection_name}/{number_of_articles}/{query}", status_code=200)
+def get_articles_from_collection(collection_name, number_of_articles: int, query: Query, media_service: MediaService = Depends()):
+    return media_service.get_articles(number_of_articles, collection_name, query.query)

@@ -31,12 +31,14 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
     #run thread with the assigned message
     run = open_ai_service.execute_thread(thread_id)
 
-    # while run.status not in ['completed', 'failed']:
-    #     print(run.status)
-    #     time.sleep(1)
-    #      run = open_ai_service.retrieve_execution(thread_id, run.id)
-    #     if run.status == 'requires_action':
-    #         run = submit_tool_outputs(thread_id, run.id, run.required_action.submit_tool_outputs.tool_calls)
+    #check if its a normal request or needs more actions
+    while run.status not in ['completed', 'failed']:
+        print(run.status)
+        time.sleep(1)
+        run = open_ai_service.retrieve_execution(thread_id, run.id)
+        if run.status == 'requires_action':
+            run = open_ai_service.submit_tool_outputs(thread_id, run.id, run.required_action.submit_tool_outputs.tool_calls)
+
     time.sleep(2)
 
     #retrieve messages from a thread
