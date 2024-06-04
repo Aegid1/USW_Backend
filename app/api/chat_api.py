@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
-from ..services.ChatService import ChatService
-from ..services.open_ai_service import OpenAIService
+from app.services.ChatService import ChatService
+from app.services.OpenAIService import OpenAIService
 import time
 
 router = APIRouter()
@@ -34,9 +34,10 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
     # while run.status not in ['completed', 'failed']:
     #     print(run.status)
     #     time.sleep(1)
-    #     run = open_ai_service.retrieve_execution(thread_id, run.id)
+    #      run = open_ai_service.retrieve_execution(thread_id, run.id)
     #     if run.status == 'requires_action':
     #         run = submit_tool_outputs(thread_id, run.id, run.required_action.submit_tool_outputs.tool_calls)
+    time.sleep(2)
 
     #retrieve messages from a thread
     messages = open_ai_service.retrieve_messages_from_thread(thread_id)

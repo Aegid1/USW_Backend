@@ -3,7 +3,7 @@ from openai import OpenAI
 
 
 class OpenAIService:
-    config = yaml.safe_load(open("../config_empty.yaml"))
+    config = yaml.safe_load(open("../config.yaml"))
     client = OpenAI(api_key=config['KEYS']['openai'])
 
     assistant = client.beta.assistants.create(
@@ -31,7 +31,7 @@ class OpenAIService:
         return self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant.id,
-            instructions="Please address the user as my Lord. The user has a premium account."
+            instructions="we are two good knight buddies, can you please talk like a knight with old-fashioned expressions"
         )
 
     def retrieve_execution(self, thread_id, run_id):
