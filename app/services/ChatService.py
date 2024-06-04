@@ -1,4 +1,4 @@
-class chat_service:
+class ChatService:
 
     def save_chat_message(self):
         #TODO

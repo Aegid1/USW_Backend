@@ -1,20 +1,22 @@
-from fastapi import APIRouter
-import chromadb
+from fastapi import APIRouter, Depends
 from chromadb.utils import embedding_functions
+from ..services.MediaService import MediaService
 
 router = APIRouter()
 
 
-@router.post("/createData")
-def create_data():
+def get_media_service():
+    return MediaService
+
+
+@router.post("/createExampleData", status_code=201)
+def create_data(media_service: MediaService = Depends()):
     default_ef = embedding_functions.DefaultEmbeddingFunction()
 
-    client = chromadb.HttpClient(host="0.0.0.0", port=8000)
-
-    collection = client.get_collection(name="articles")
+    collection = media_service.get_collection("articles")
 
     if collection is None:
-        collection = client.create_collection(name="articles", embedding_function=default_ef)
+        collection = media_service.create_collection("articles", default_ef)
 
     articles = [
         {"id": "1", "title": "Article 1", "content": "Content of article 1",
@@ -47,3 +49,20 @@ def create_data():
     )
 
     print("Initial state has been created and stored.")
+
+
+@router.post("/articles/{collection_name}", status_code=201)
+def add_article_to_collection(article, collection_name, media_service: MediaService = Depends()):
+    collection = media_service.get_collection(collection_name)
+    media_service.store_article(collection, article)
+
+
+@router.post("/articles/many/{collection_name}", status_code=201)
+def add_multiple_articles_to_collection(articles, collection_name, media_service: MediaService = Depends()):
+    collection = media_service.get_collection(collection_name)
+    media_service.store_multiple_articles(collection, articles)
+
+
+@router.get("/articles/{collection_name}/{number_of_articles}", status_code=200)
+def get_articles_from_collection(number_of_articles, collection_name, query, media_service: MediaService = Depends()):
+    return media_service.get_articles(number_of_articles, collection_name, query)

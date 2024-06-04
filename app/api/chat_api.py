@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from ..services.chat_service import chat_service
+from ..services.ChatService import ChatService
 from ..services.open_ai_service import OpenAIService
 import time
 
@@ -7,20 +7,20 @@ router = APIRouter()
 
 
 def get_chat_service():
-    return chat_service()
+    return ChatService()
 
 
 def get_open_ai_service():
     return OpenAIService
 
 
-@router.post("/chat")
+@router.post("/chat", status_code=201)
 async def create_thread_id(open_ai_service: OpenAIService = Depends()):
     thread_id = open_ai_service.create_thread_id()
     return thread_id
 
 
-@router.post("/chat/{thread_id}")
+@router.post("/chat/{thread_id}", status_code=200)
 async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depends()):
     message_text = message.get("text", "")
     #store message in db
