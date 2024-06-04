@@ -1,2 +1,3 @@
 chromadb~=0.4.24
 uvicorn~=0.25.0
+fastapi~=0.111.0
