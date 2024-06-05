@@ -10,13 +10,14 @@ class OpenAIService:
 
     tools = []
 
+    function_lookup = {}
+
     assistant = client.beta.assistants.create(
         name="Email Assistant",
         instructions="You are an assistant who has access to Emails and the web.",
         tools=[],
         model="gpt-3.5-turbo-0125"
     )
-
 
     def create_thread_id(self):
         return self.client.beta.threads.create()
@@ -62,7 +63,7 @@ class OpenAIService:
             tool_call_id = tool.id
             function_name = tool.function.name
             function_args = json.loads(tool.function.arguments)
-            function_to_call = function_lookup[function_name]
+            function_to_call = self.function_lookup[function_name]
 
             #the chosen function is executed here
             output = function_to_call(**function_args)

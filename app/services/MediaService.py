@@ -56,7 +56,7 @@ class MediaService:
         return self.client.create_collection(name=collection_name, embedding_function=embedding_function)
 
     def __is_id_available(self, article_id, collection):
-        if collection.get(article_id) is None:
+        if collection.get(article_id).get("data") is None:
             return True
 
         return False
