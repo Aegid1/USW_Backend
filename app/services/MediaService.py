@@ -1,6 +1,7 @@
 import os
 import chromadb
 import uuid
+import tiktoken
 
 
 class MediaService:
@@ -45,7 +46,7 @@ class MediaService:
             ids=ids
         )
 
-    def get_articles(self, number_of_articles, collection_name, query):
+    def get_articles(self, number_of_articles, query, collection_name="articles"):
         collection = self.get_collection(collection_name)
 
         return collection.query(
@@ -64,3 +65,11 @@ class MediaService:
             return True
 
         return False
+
+    def get_article_by_id(self, collection, id):
+        return collection.get(id)
+
+    def count_token(self, article: str):
+        encoding = tiktoken.encoding_for_model("gpt-3.5-turbo-0125")
+        tokens = encoding.encode(article)
+        return len(tokens)

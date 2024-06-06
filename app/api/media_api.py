@@ -84,4 +84,14 @@ def add_multiple_articles_to_collection(articles, collection_name, media_service
 @router.post("/articles/{collection_name}/{number_of_articles}", status_code=200)
 def get_articles_from_collection(collection_name, number_of_articles: int, query: Query,
                                  media_service: MediaService = Depends()):
-    return media_service.get_articles(number_of_articles, collection_name, query.query)
+    return media_service.get_articles(number_of_articles, query.query, collection_name)
+
+
+#will be changed later on, to get the average amount of tokens of x articles
+@router.get("/articles/{article_id}")
+def get_amount_of_tokens_of_article(article_id: str, media_service: MediaService = Depends()):
+    collection = media_service.get_collection("articles")
+    article = media_service.get_article_by_id(collection, article_id)
+
+    return media_service.count_token(article.get("documents")[0])
+

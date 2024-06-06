@@ -11,21 +11,21 @@ services:
     networks:
       - mynetwork
 
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: app
-    ports:
-      - "4000:4000"
-    depends_on:
-      - chromadb
-    environment:
-      - UVICORN_PORT=4000
-      - IS_DOCKER=true
-
-    networks:
-      - mynetwork
+#  app:
+#    build:
+#      context: .
+#      dockerfile: Dockerfile
+#    container_name: app
+#    ports:
+#      - "4000:4000"
+#    depends_on:
+#      - chromadb
+#    environment:
+#      - UVICORN_PORT=4000
+#      - IS_DOCKER=true
+#
+#    networks:
+#      - mynetwork
 
 networks:
   mynetwork:

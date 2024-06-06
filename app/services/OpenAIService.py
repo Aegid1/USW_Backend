@@ -2,11 +2,16 @@ import json
 import yaml
 from openai import OpenAI
 
+from app.services.MediaService import MediaService
+
 
 class OpenAIService:
     config = yaml.safe_load(open("openai_config.yaml"))
     client = OpenAI(api_key=config['KEYS']['openai'])
 
+    mediaservice = MediaService()
+
+    #metadata of the given functions
     tools = []
 
     function_lookup = {}
@@ -14,9 +19,13 @@ class OpenAIService:
     assistant = client.beta.assistants.create(
         name="Email Assistant",
         instructions="You are an assistant who has access to Emails and the web.",
-        tools=[],
+        tools=tools,
         model="gpt-3.5-turbo-0125"
     )
+
+    def solveProblem(self, query: str, user_prompt: str):
+        #laden wir hier wirklich schon alle Artikel auf einmal rein?
+        articles = self.mediaservice.get_articles(200, query=query)
 
     def create_thread_id(self):
         return self.client.beta.threads.create()
@@ -32,8 +41,7 @@ class OpenAIService:
             content=message_text
         )
 
-    #this function should be used, when the user wants to gain some information about a certain topic, and data needs
-    #to be collected from the db, with a specific query
+    #even necessary anymore?
     def derive_query_from_request(self, thread_id):
         return self.client.beta.threads.messages.create(
             thread_id=thread_id,
@@ -55,6 +63,7 @@ class OpenAIService:
     def retrieve_messages_from_thread(self, thread_id):
         return self.client.beta.threads.messages.list(thread_id=thread_id)
 
+    #executes the chosen function
     def submit_tool_outputs(self, thread_id, run_id, tools_to_call):
         tool_output_array = []
         for tool in tools_to_call:
