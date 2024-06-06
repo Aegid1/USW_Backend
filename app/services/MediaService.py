@@ -4,9 +4,7 @@ import uuid
 
 
 class MediaService:
-    print(os.getenv("IS_DOCKER"))
     if os.getenv('IS_DOCKER') == "true":
-        print("ICH BIN HIER IN DER IF-BEDINGUNG")
         client = chromadb.HttpClient(host="chromadb", port=8000)
     else:
         client = chromadb.HttpClient(host="localhost", port=8000)
