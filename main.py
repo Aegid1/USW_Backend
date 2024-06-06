@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
-from api.chat_api import router as chat_router
-from api.media_api import router as media_router
+from app.api.chat_api import router as chat_router
+from app.api.media_api import router as media_router
 
 app = FastAPI()
 

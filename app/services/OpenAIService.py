@@ -1,11 +1,10 @@
 import json
-
 import yaml
 from openai import OpenAI
 
 
 class OpenAIService:
-    config = yaml.safe_load(open("../config.yaml"))
+    config = yaml.safe_load(open("openai_config.yaml"))
     client = OpenAI(api_key=config['KEYS']['openai'])
 
     tools = []

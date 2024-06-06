@@ -1,9 +1,15 @@
+import os
 import chromadb
 import uuid
 
 
 class MediaService:
-    client = chromadb.HttpClient(host="0.0.0.0", port=8000)
+    print(os.getenv("IS_DOCKER"))
+    if os.getenv('IS_DOCKER') == "true":
+        print("ICH BIN HIER IN DER IF-BEDINGUNG")
+        client = chromadb.HttpClient(host="chromadb", port=8000)
+    else:
+        client = chromadb.HttpClient(host="localhost", port=8000)
 
     def store_article(self, collection, article: dict):
         content = article.get("content")
