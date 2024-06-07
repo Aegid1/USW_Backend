@@ -11,7 +11,6 @@ class OpenAIService:
     client = OpenAI(api_key=config['KEYS']['openai'])
 
     mediaservice = MediaService()
-
     #metadata of the given functions
     tools = []
 
