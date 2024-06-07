@@ -41,7 +41,6 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
 
     time.sleep(2)
 
-    #retrieve messages from a thread
     messages = open_ai_service.retrieve_messages_from_thread(thread_id)
 
     return messages.data[0].content[0].text.value

@@ -1,6 +1,7 @@
 import json
 import yaml
 from openai import OpenAI
+import concurrent.futures
 
 from app.services.MediaService import MediaService
 
@@ -18,14 +19,37 @@ class OpenAIService:
 
     assistant = client.beta.assistants.create(
         name="Email Assistant",
-        instructions="You are an assistant who has access to Emails and the web.",
+        instructions="You are an assistant who has access to media articles that are about political topics.",
         tools=tools,
         model="gpt-3.5-turbo-0125"
     )
 
     def solveProblem(self, query: str, user_prompt: str):
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
-        articles = self.mediaservice.get_articles(200, query=query)
+        articles = self.mediaservice.get_articles(10, query=query)
+        articles_divided = self.__divide_lists(articles, 5)
+        print(len(articles_divided))
+
+        results = []
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(self.__process_batch, batch, user_prompt) for batch in articles_divided]
+            concurrent.futures.wait(futures)
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result = future.result()
+                    results.append(result.data[0].content[0].text.value)
+                except Exception as exc:
+                    print(f"Batch generated an exception: {exc}")
+
+        thread_id = self.create_thread_id()
+
+        #combines the results for one final result
+        request = user_prompt + "\n" + "\n\n".join(results)
+
+        return self.send_message_to_thread(thread_id, request)
+
+
 
     def create_thread_id(self):
         return self.client.beta.threads.create()
@@ -83,3 +107,18 @@ class OpenAIService:
             run_id=run_id,
             tool_outputs=tool_output_array
         )
+
+    def __divide_lists(self, data: list, n: int) -> list[list]:
+        """Teilt eine Liste in n gleichgroße Unterlisten auf"""
+        k, m = divmod(len(data), n)
+        return [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
+
+    def __process_batch(self, batch, user_prompt):
+        thread_id = self.create_thread_id()
+        request = "\n\n".join(batch)
+        request = user_prompt + "\n" + request
+
+        result = self.send_message_to_thread(thread_id, request)
+        #maybe kill the thread afterwards?
+
+        return result
