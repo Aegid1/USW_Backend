@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from chromadb.utils import embedding_functions
 from app.services.MediaService import MediaService
+from app.services.NewsApiService import NewsApiService
+from app.services.OpenAIService import OpenAIService
 from pydantic import BaseModel
 
 router = APIRouter()
@@ -95,3 +97,17 @@ def get_amount_of_tokens_of_article(article_id: str, media_service: MediaService
 
     return media_service.count_token(article.get("documents")[0])
 
+@router.post("/articles/news/{start_date}/{end_date}")
+def store_articles_from_news_api(start_date: str,
+                                 end_date: str,
+                                 media_service: MediaService = Depends(),
+                                 news_api_service: NewsApiService = Depends(),
+                                 open_ai_service: OpenAIService = Depends()):
+
+    articles = news_api_service.get_articles(1, start_date, end_date).get("news")
+    for article in articles:
+        thread_id = open_ai_service.create_thread_id()
+        keywords = open_ai_service.get_keywords(thread_id, article.get("text"))
+        summary = open_ai_service.get_summary(thread_id, article.get("text"), 100)
+        structured_article = news_api_service.transform_article(article, summary, keywords)
+        media_service.store_article("articles", structured_article)

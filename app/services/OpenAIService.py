@@ -107,6 +107,18 @@ class OpenAIService:
             tool_outputs=tool_output_array
         )
 
+    #das hier muss an die Batch-API gesendet werden
+    def get_keywords(self, thread_id, text):
+        #darf das überhaupt in deutsch sein?
+        text = "kannst du mir lediglich 5 keywords zu folgendem Artikel nennen ohne Nummerierung oder Ähnliches"
+        self.send_message_to_thread(thread_id, text)
+        #TODO()
+        pass
+
+    #das hier muss an die Batch-API gesendet werden
+    def get_summary(self, thread_id, text, length):
+        #TODO()
+        pass
     def __divide_lists(self, data: list, n: int) -> list[list]:
         """Teilt eine Liste in n gleichgroße Unterlisten auf"""
         k, m = divmod(len(data), n)
