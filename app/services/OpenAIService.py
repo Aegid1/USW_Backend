@@ -32,14 +32,14 @@ class OpenAIService:
         results = []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(self.__process_batch, batch, user_prompt) for batch in articles_divided]
+            futures = [executor.submit(self.__process_article_list, article_list, user_prompt) for article_list in articles_divided]
             concurrent.futures.wait(futures)
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result = future.result()
                     results.append(result.data[0].content[0].text.value)
                 except Exception as exc:
-                    print(f"Batch generated an exception: {exc}")
+                    print(f"list of articles generated an exception: {exc}")
 
         thread_id = self.create_thread_id()
 
@@ -107,29 +107,74 @@ class OpenAIService:
             tool_outputs=tool_output_array
         )
 
-    #das hier muss an die Batch-API gesendet werden
-    def get_keywords(self, thread_id, text):
-        #darf das überhaupt in deutsch sein?
-        text = "kannst du mir lediglich 5 keywords zu folgendem Artikel nennen ohne Nummerierung oder Ähnliches"
-        self.send_message_to_thread(thread_id, text)
-        #TODO()
-        pass
+    #das hier muss an die Batch-API gesendet werden -> eigener Batch
+    def create_keywords(self, document_id, text):
+        text = "kannst du mir lediglich 5 keywords zu folgendem Artikel nennen ohne Nummerierung oder Vergleichbares" + text
 
-    #das hier muss an die Batch-API gesendet werden
-    def get_summary(self, thread_id, text, length):
-        #TODO()
-        pass
+        request = {
+            "custom_id": document_id,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": {
+                "model": "gpt-3.5-turbo-0125",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Du bist ein hilfreicher Assistent, der anhand eines Artikels 5 repräsentative Keywords ableitet,"
+                                   "die er nacheinander, nur durch ein Komma getrennt, nennt."
+                    },
+                    {
+                        "role": "user",
+                        "content": text
+                    }
+                ],
+                "max_tokens": 1000
+            }
+        }
+        self.__add_to_batch(request, "test_batch.jsonl")
+
+    #das hier muss an die Batch-API gesendet werden -> eigener Batch
+    def create_summary(self, document_id: str, text: str, length):
+        text = "kannst du mir Zusammenfassung des folgenden Artikels in " + length + " Wörtern geben" + text
+
+        request = {
+            "custom_id": document_id,
+            "method": "POST",
+            "url": "/v1/chat/completions",
+            "body": {
+                "model": "gpt-3.5-turbo-0125",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "Du bist ein hilfreicher Assistent, der eine prägnante aber detaillierte Zusammenfassung"
+                                   "aus einem Artikel schreibst"
+                    },
+                    {
+                        "role": "user",
+                        "content": text
+                    }
+                ],
+                "max_tokens": 1000
+            }
+        }
+        self.__add_to_batch(request, "test_batch.jsonl")
+
+
+    def __add_to_batch(self, request: dict, file_name: str):
+        with open(file_name, 'a') as f:
+            json_str = json.dumps(request)
+            f.write(json_str + '\n')
+
     def __divide_lists(self, data: list, n: int) -> list[list]:
         """Teilt eine Liste in n gleichgroße Unterlisten auf"""
         k, m = divmod(len(data), n)
         return [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
 
-    def __process_batch(self, batch, user_prompt):
+    def __process_article_list(self, article_list, user_prompt):
         thread_id = self.create_thread_id()
-        request = "\n\n".join(batch)
+        request = "\n\n".join(article_list)
         request = user_prompt + "\n" + request
 
         result = self.send_message_to_thread(thread_id, request)
-        #maybe kill the thread afterwards?
 
         return result

@@ -106,8 +106,9 @@ def store_articles_from_news_api(start_date: str,
 
     articles = news_api_service.get_articles(1, start_date, end_date).get("news")
     for article in articles:
-        thread_id = open_ai_service.create_thread_id()
-        keywords = open_ai_service.get_keywords(thread_id, article.get("text"))
-        summary = open_ai_service.get_summary(thread_id, article.get("text"), 100)
-        structured_article = news_api_service.transform_article(article, summary, keywords)
-        media_service.store_article("articles", structured_article)
+        structured_article = news_api_service.transform_article(article)
+        document_id = media_service.store_article("articles", structured_article)
+
+        # keywords = open_ai_service.create_keywords(document_id, article.get("text"))
+        # summary = open_ai_service.create_summary(document_id, article.get("text"), 100)
+        #media_service.store_article("articles", structured_article)

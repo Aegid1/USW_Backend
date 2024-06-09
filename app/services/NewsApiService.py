@@ -30,7 +30,7 @@ class NewsApiService:
         response = requests.post(self.url, json=payload, headers=headers)
         return response
 
-    def transform_article(self, article, text, keywords):
+    def transform_article(self, article, text="", keywords=""):
         transformed_article = {
             "content": text,
             "metadata": {

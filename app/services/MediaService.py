@@ -25,6 +25,7 @@ class MediaService:
             metadatas=metadata,
             ids=generated_id
         )
+        return generated_id
 
     def store_multiple_articles(self, collection, articles):
         contents = [article["content"] for article in articles]
