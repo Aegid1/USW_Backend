@@ -7,7 +7,7 @@ from app.services.MediaService import MediaService
 
 class NewsApiService:
     url = "https://newsnow.p.rapidapi.com/newsv2"
-    config = yaml.safe_load(open("./app/services/openai_config.yaml"))
+    config = yaml.safe_load(open("openai_config.yaml"))
 
     def get_articles(self, amount: int, start_date: str, end_date: str):
         # date format is DD/MM/YYYY
@@ -49,8 +49,3 @@ class NewsApiService:
         parsed_date = datetime.strptime(date, "%a, %d %b %Y %H:%M:%S %Z")
         formatted_date_str = parsed_date.strftime("%Y-%m-%d")
         return formatted_date_str
-
-
-news_api = NewsApiService()
-response = news_api.get_articles(1, "13/02/2023", "15/02/2023")
-print(response.json())

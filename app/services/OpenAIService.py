@@ -2,7 +2,6 @@ import json
 import yaml
 from openai import OpenAI
 import concurrent.futures
-
 from app.services.MediaService import MediaService
 
 
@@ -47,7 +46,6 @@ class OpenAIService:
         request = user_prompt + "\n" + "\n\n".join(results)
 
         return self.send_message_to_thread(thread_id, request)
-
 
 
     def create_thread_id(self):
@@ -160,10 +158,46 @@ class OpenAIService:
         self.__add_to_batch(request, "test_batch.jsonl")
 
 
+    def send_batch(self, batch_name: str):
+        batch_input_file = self.client.files.create(
+            file=open(batch_name, "rb"),
+            purpose="batch"
+        )
+        batch = self.client.batches.create(
+            input_file_id=batch_input_file.id,
+            endpoint="/v1/chat/completions",
+            completion_window="24h",
+            metadata={
+                "description": "nightly eval job"
+            }
+        )
+        with open("batch_ids", 'a') as file:
+            file.write(batch.id)
+
+    def retrieve_batch_content(self, batch_id: str, content_type):
+        batch = self.client.batches.retrieve(batch_id)
+        #TODO() check the status of the batch
+        output_file = self.client.files.content(batch.output_file_id)
+
+        content = output_file.content
+        content_str = content.decode('utf-8')
+        lines = content_str.splitlines()
+        request_list = [json.loads(line) for line in lines]
+
+        for request in request_list:
+            document_id = request.get("custom_id")
+            response = request.get("response").get("body").get("choices")[0].get("message").get("content")
+            self.mediaservice.update_collection("articles", document_id, content_type, response)
+
+
+    def check_batch_status(self, batch_id: str):
+        #TODO()
+        pass
+
     def __add_to_batch(self, request: dict, file_name: str):
-        with open(file_name, 'a') as f:
+        with open(file_name, 'a') as file:
             json_str = json.dumps(request)
-            f.write(json_str + '\n')
+            file.write(json_str + '\n')
 
     def __divide_lists(self, data: list, n: int) -> list[list]:
         """Teilt eine Liste in n gleichgroße Unterlisten auf"""

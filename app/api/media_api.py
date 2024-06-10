@@ -29,6 +29,15 @@ def get_media_service():
     return MediaService
 
 
+def get_newsapi_service():
+    return NewsApiService
+
+
+def get_openai_service():
+    return OpenAIService
+
+
+# only useful for development purposes, will be deleted in the end
 @router.post("/createExampleData", status_code=201)
 def create_data(media_service: MediaService = Depends()):
     default_ef = embedding_functions.DefaultEmbeddingFunction()
@@ -97,18 +106,16 @@ def get_amount_of_tokens_of_article(article_id: str, media_service: MediaService
 
     return media_service.count_token(article.get("documents")[0])
 
+
 @router.post("/articles/news/{start_date}/{end_date}")
 def store_articles_from_news_api(start_date: str,
                                  end_date: str,
                                  media_service: MediaService = Depends(),
                                  news_api_service: NewsApiService = Depends(),
                                  open_ai_service: OpenAIService = Depends()):
-
     articles = news_api_service.get_articles(1, start_date, end_date).get("news")
     for article in articles:
         structured_article = news_api_service.transform_article(article)
         document_id = media_service.store_article("articles", structured_article)
-
-        # keywords = open_ai_service.create_keywords(document_id, article.get("text"))
-        # summary = open_ai_service.create_summary(document_id, article.get("text"), 100)
-        #media_service.store_article("articles", structured_article)
+        open_ai_service.create_keywords(document_id, article.get("text"))
+        open_ai_service.create_summary(document_id, article.get("text"), 100)
