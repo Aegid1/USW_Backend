@@ -31,7 +31,8 @@ class OpenAIService:
         results = []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(self.__process_article_list, article_list, user_prompt) for article_list in articles_divided]
+            futures = [executor.submit(self.__process_article_list, article_list, user_prompt) for article_list in
+                       articles_divided]
             concurrent.futures.wait(futures)
             for future in concurrent.futures.as_completed(futures):
                 try:
@@ -46,7 +47,6 @@ class OpenAIService:
         request = user_prompt + "\n" + "\n\n".join(results)
 
         return self.send_message_to_thread(thread_id, request)
-
 
     def create_thread_id(self):
         return self.client.beta.threads.create()
@@ -157,7 +157,6 @@ class OpenAIService:
         }
         self.__add_to_batch(request, "test_batch.jsonl")
 
-
     def send_batch(self, batch_name: str):
         batch_input_file = self.client.files.create(
             file=open(batch_name, "rb"),
@@ -176,7 +175,9 @@ class OpenAIService:
 
     def retrieve_batch_content(self, batch_id: str, content_type):
         batch = self.client.batches.retrieve(batch_id)
-        #TODO() check the status of the batch
+        if batch.status != "completed":
+            return "Your batch is currently not ready and in the state: " + batch.status
+
         output_file = self.client.files.content(batch.output_file_id)
 
         content = output_file.content
@@ -189,10 +190,9 @@ class OpenAIService:
             response = request.get("response").get("body").get("choices")[0].get("message").get("content")
             self.mediaservice.update_collection("articles", document_id, content_type, response)
 
-
     def check_batch_status(self, batch_id: str):
-        #TODO()
-        pass
+        batch = self.client.batches.retrieve(batch_id)
+        return batch.status
 
     def __add_to_batch(self, request: dict, file_name: str):
         with open(file_name, 'a') as file:

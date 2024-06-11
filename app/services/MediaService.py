@@ -68,6 +68,7 @@ class MediaService:
 
     def update_collection(self, collection_name, document_id: str, type: DocumentType, content: str):
         collection = self.get_collection(collection_name)
+        print(collection.id)
         if type == DocumentType.SUMMARY:
             collection.update(ids=document_id, documents=content)
         else:

@@ -119,3 +119,9 @@ def store_articles_from_news_api(start_date: str,
         document_id = media_service.store_article("articles", structured_article)
         open_ai_service.create_keywords(document_id, article.get("text"))
         open_ai_service.create_summary(document_id, article.get("text"), 100)
+
+
+@router.get("/articles/{collection_name}/{document_id}")
+def get_specific_article_by_id(collection_name: str, document_id: str, media_service: MediaService = Depends()):
+    collection = media_service.get_collection(collection_name)
+    return media_service.get_article_by_id(collection, document_id)
