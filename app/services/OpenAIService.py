@@ -1,4 +1,6 @@
 import json
+import time
+
 import yaml
 from openai import OpenAI
 import concurrent.futures
@@ -10,28 +12,25 @@ class OpenAIService:
     client = OpenAI(api_key=config['KEYS']['openai'])
 
     mediaservice = MediaService()
-    #metadata of the given functions
-    tools = []
 
-    function_lookup = {}
+    @staticmethod
+    def solve_problem(query: str, user_prompt: str):
 
-    assistant = client.beta.assistants.create(
-        name="Email Assistant",
-        instructions="You are an assistant who has access to media articles that are about political topics.",
-        tools=tools,
-        model="gpt-3.5-turbo-0125"
-    )
+        mediaservice = MediaService()
+        openai_service = OpenAIService()
+        thread_id = openai_service.create_thread_id()
 
-    def solveProblem(self, query: str, user_prompt: str):
+        print(query)
+        print(user_prompt)
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
-        articles = self.mediaservice.get_articles(10, query=query)
-        articles_divided = self.__divide_lists(articles, 5)
-        print(len(articles_divided))
+        articles = mediaservice.get_articles(10, query=query)
+        articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 5)
 
         results = []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(self.__process_article_list, article_list, user_prompt) for article_list in
+            futures = [executor.submit(openai_service.__process_article_list, article_list, user_prompt) for
+                       article_list in
                        articles_divided]
             concurrent.futures.wait(futures)
             for future in concurrent.futures.as_completed(futures):
@@ -41,12 +40,44 @@ class OpenAIService:
                 except Exception as exc:
                     print(f"list of articles generated an exception: {exc}")
 
-        thread_id = self.create_thread_id()
-
         #combines the results for one final result
         request = user_prompt + "\n" + "\n\n".join(results)
 
-        return self.send_message_to_thread(thread_id, request)
+        return openai_service.send_message_to_thread(thread_id, request)
+
+    tools = [{
+        "type": "function",
+        "function": {
+            "name": "solve_problem",
+            #hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
+            "description": "Löse das problem, das aus dem user request hervorgeht, dass sich auf ein politisches Problem bezieht.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Die query, welche die benötigten Daten aus der chromadb sammelt um das problem zu lösen"
+                    },
+                    "user_prompt": {
+                        "type": "string",
+                        "description": "Der user prompt, der das problem beinhaltet, das gelöst werden soll"
+                    }
+                },
+                "required": ["query", "user_prompt"]
+            }
+        }
+    }]
+
+    function_lookup = {
+        "solve_problem": solve_problem
+    }
+
+    assistant = client.beta.assistants.create(
+        name="Email Assistant",
+        instructions="You are an assistant who has access to media articles that are about political topics.",
+        tools=tools,
+        model="gpt-3.5-turbo-0125"
+    )
 
     def create_thread_id(self):
         return self.client.beta.threads.create()
@@ -129,7 +160,7 @@ class OpenAIService:
                 "max_tokens": 1000
             }
         }
-        self.__add_to_batch(request, "test_batch.jsonl")
+        return self.__add_to_batch(request, "test_batch.jsonl")
 
     #das hier muss an die Batch-API gesendet werden -> eigener Batch
     def create_summary(self, document_id: str, text: str, length):
@@ -155,7 +186,7 @@ class OpenAIService:
                 "max_tokens": 1000
             }
         }
-        self.__add_to_batch(request, "test_batch.jsonl")
+        return self.__add_to_batch(request, "test_batch.jsonl")
 
     def send_batch(self, batch_name: str):
         batch_input_file = self.client.files.create(
@@ -194,21 +225,25 @@ class OpenAIService:
         batch = self.client.batches.retrieve(batch_id)
         return batch.status
 
-    def __add_to_batch(self, request: dict, file_name: str):
-        with open(file_name, 'a') as file:
-            json_str = json.dumps(request)
-            file.write(json_str + '\n')
+    def __process_article_list(self, article_list, user_prompt):
+        thread_id = self.create_thread_id()
+        time.sleep(10)
+        request = "\n\n".join(article_list)
+        request = user_prompt + "\n" + request
 
-    def __divide_lists(self, data: list, n: int) -> list[list]:
+        print("DAS IST DIE THREAD_ID " + thread_id.id)
+        result = self.send_message_to_thread(thread_id.id, request)
+        print(request)
+        return result
+
+    @staticmethod
+    def __divide_lists(data: list, n: int) -> list[list]:
         """Teilt eine Liste in n gleichgroße Unterlisten auf"""
         k, m = divmod(len(data), n)
         return [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
 
-    def __process_article_list(self, article_list, user_prompt):
-        thread_id = self.create_thread_id()
-        request = "\n\n".join(article_list)
-        request = user_prompt + "\n" + request
-
-        result = self.send_message_to_thread(thread_id, request)
-
-        return result
+    @staticmethod
+    def __add_to_batch(request: dict, file_name: str):
+        with open(file_name, 'a') as file:
+            json_str = json.dumps(request)
+            file.write(json_str + '\n')

@@ -23,7 +23,6 @@ async def create_thread_id(open_ai_service: OpenAIService = Depends()):
 @router.post("/chat/{thread_id}", status_code=200)
 async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depends()):
     message_text = message.get("text", "")
-    #store message in db
 
     #send message to thread
     message = open_ai_service.send_message_to_thread(thread_id, message_text)
