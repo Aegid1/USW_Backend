@@ -76,7 +76,6 @@ class MediaService:
             metadata["keywords"] = content
             collection.update(ids=document_id, metadatas=metadata)
 
-
     def create_collection(self, collection_name, embedding_function):
         return self.client.create_collection(name=collection_name, embedding_function=embedding_function)
 

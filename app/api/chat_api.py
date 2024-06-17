@@ -1,6 +1,9 @@
+import json
+
 from fastapi import APIRouter, Depends
 from app.services.ChatService import ChatService
 from app.services.OpenAIService import OpenAIService
+from app.utils.analysis_utils import is_analysis_pending
 import time
 
 router = APIRouter()
@@ -16,7 +19,7 @@ def get_open_ai_service():
 
 @router.post("/chat", status_code=201)
 async def create_thread_id(open_ai_service: OpenAIService = Depends()):
-    thread_id = open_ai_service.create_thread_id()
+    thread_id = open_ai_service.create_thread()
     return thread_id
 
 

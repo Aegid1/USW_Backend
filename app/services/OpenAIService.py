@@ -11,17 +11,46 @@ class OpenAIService:
     config = yaml.safe_load(open("openai_config.yaml"))
     client = OpenAI(api_key=config['KEYS']['openai'])
 
+    def __init__(self):
+        tools = [{
+            "type": "function",
+            "function": {
+                "name": "solve_problem",
+                # hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
+                "description": "Löse das problem, das aus dem user request hervorgeht, dass sich auf ein politisches Problem bezieht.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Die query, welche die benötigten Daten aus der chromadb sammelt um das problem zu lösen"
+                        },
+                        "user_prompt": {
+                            "type": "string",
+                            "description": "Der user prompt, der das problem beinhaltet, das gelöst werden soll"
+                        }
+                    },
+                    "required": ["query", "user_prompt"]
+                }
+            }
+        }]
+
+        self.assistant = self.client.beta.assistants.create(
+            name="Email Assistant",
+            instructions="You are an assistant who has access to media articles that are about political topics.",
+            tools=tools,
+            model="gpt-3.5-turbo-0125"
+        )
+
     mediaservice = MediaService()
 
     @staticmethod
-    def solve_problem(query: str, user_prompt: str):
+    def solve_problem_with_parallelization(query: str, user_prompt: str):
 
         mediaservice = MediaService()
         openai_service = OpenAIService()
-        thread_id = openai_service.create_thread_id()
+        thread_id = openai_service.create_thread()
 
-        print(query)
-        print(user_prompt)
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
         articles = mediaservice.get_articles(10, query=query)
         articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 5)
@@ -36,50 +65,53 @@ class OpenAIService:
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result = future.result()
+                    print(result)
                     results.append(result.data[0].content[0].text.value)
                 except Exception as exc:
                     print(f"list of articles generated an exception: {exc}")
 
         #combines the results for one final result
         request = user_prompt + "\n" + "\n\n".join(results)
+        openai_service.send_message_to_thread(thread_id.id, request)
+        time.sleep(2)
+        openai_service.execute_thread(thread_id.id)
+        return openai_service.retrieve_messages_from_thread(thread_id.id)
 
-        return openai_service.send_message_to_thread(thread_id, request)
+    @staticmethod
+    def solve_problem(query: str, user_prompt: str):
 
-    tools = [{
-        "type": "function",
-        "function": {
-            "name": "solve_problem",
-            #hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
-            "description": "Löse das problem, das aus dem user request hervorgeht, dass sich auf ein politisches Problem bezieht.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Die query, welche die benötigten Daten aus der chromadb sammelt um das problem zu lösen"
-                    },
-                    "user_prompt": {
-                        "type": "string",
-                        "description": "Der user prompt, der das problem beinhaltet, das gelöst werden soll"
-                    }
-                },
-                "required": ["query", "user_prompt"]
-            }
-        }
-    }]
+        mediaservice = MediaService()
+
+        openai_service = OpenAIService()
+
+        # laden wir hier wirklich schon alle Artikel auf einmal rein?
+        articles = mediaservice.get_articles(10, query=query)
+
+        #TODO() number of articles per thread needs to be adjusted
+        articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 5)
+        results = []
+
+        for article_list in articles_divided:
+            result = openai_service.__process_article_list(article_list, user_prompt)
+            results.append(result.data[0].content[0].text.value)
+
+        thread_id = openai_service.create_thread()
+        # combines the results for one final result
+        request = user_prompt + "\n" + ("mit den folgenden Materialien (ohne Veränderung des Wortlauts in den "
+                                        "Artikeln), sodass es als Zwischenergebnis für folgende Analysen verwendet "
+                                        "werden kann") + "\n\n".join(results)
+
+        openai_service.send_message_to_thread(thread_id.id, request)
+        time.sleep(2)
+        openai_service.execute_thread_without_function_calling(thread_id.id)
+        messages = openai_service.retrieve_messages_from_thread(thread_id.id)
+        return messages.data[0].content[0].text.value
 
     function_lookup = {
         "solve_problem": solve_problem
     }
 
-    assistant = client.beta.assistants.create(
-        name="Email Assistant",
-        instructions="You are an assistant who has access to media articles that are about political topics.",
-        tools=tools,
-        model="gpt-3.5-turbo-0125"
-    )
-
-    def create_thread_id(self):
+    def create_thread(self):
         return self.client.beta.threads.create()
 
     def get_thread_id(self):
@@ -106,7 +138,15 @@ class OpenAIService:
         return self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant.id,
-            instructions="we are two good knight buddies, can you please talk like a knight with old-fashioned expressions"
+            instructions="you are an analyst that does sentiment-analysis of media-articles, talk in a professional and reasoning way"
+        )
+
+    def execute_thread_without_function_calling(self, thread_id):
+        return self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant.id,
+            instructions="you are an analyst that does sentiment-analysis of media-articles, talk in a professional and reasoning way",
+            tool_choice="none"
         )
 
     def retrieve_execution(self, thread_id, run_id):
@@ -129,6 +169,13 @@ class OpenAIService:
             output = function_to_call(**function_args)
             if output:
                 tool_output_array.append({"tool_call_id": tool_call_id, "output": output})
+
+            # if function_name == "solve_problem":
+            #     #closes the thread
+            #     # cancelled_run = self.client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
+            #     # print(cancelled_run)
+            #     #vielleicht hier noch ein kurzer timeout
+            #     return output
 
         return self.client.beta.threads.runs.submit_tool_outputs(
             thread_id=thread_id,
@@ -226,15 +273,22 @@ class OpenAIService:
         return batch.status
 
     def __process_article_list(self, article_list, user_prompt):
-        thread_id = self.create_thread_id()
-        time.sleep(10)
+        thread_id = self.create_thread()
         request = "\n\n".join(article_list)
         request = user_prompt + "\n" + request
 
-        print("DAS IST DIE THREAD_ID " + thread_id.id)
-        result = self.send_message_to_thread(thread_id.id, request)
-        print(request)
-        return result
+        self.send_message_to_thread(thread_id.id, request)
+        time.sleep(1)
+        run = self.execute_thread_without_function_calling(thread_id.id)
+
+        while run.status not in ['completed', 'failed']:
+            run = self.retrieve_execution(thread_id.id, run.id)
+            print(run.status)
+            time.sleep(1)
+
+        print("----------------------------------------------------------------------------")
+        print("JETZT IST FERTIG")
+        return self.retrieve_messages_from_thread(thread_id.id)
 
     @staticmethod
     def __divide_lists(data: list, n: int) -> list[list]:
