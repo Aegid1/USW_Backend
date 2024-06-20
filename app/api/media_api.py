@@ -8,6 +8,13 @@ from pydantic import BaseModel
 router = APIRouter()
 
 
+class NewsApiRequest(BaseModel):
+    start_date: str
+    end_date: str
+    topic: str
+    page_number: int
+
+
 class Query(BaseModel):
     query: str
 
@@ -79,6 +86,52 @@ def create_data(media_service: MediaService = Depends()):
     print("Initial state has been created and stored.")
 
 
+@router.post("/articles/news/check")
+def get_articles_from_news_api(request: NewsApiRequest,
+                               news_api_service: NewsApiService = Depends()):
+    articles = news_api_service.get_articles(request.topic, request.page_number, request.start_date,
+                                             request.end_date).get("news")
+    return articles
+
+
+@router.post("/articles/news")
+def store_articles_from_news_api(request: NewsApiRequest,
+                                 media_service: MediaService = Depends(),
+                                 news_api_service: NewsApiService = Depends(),
+                                 open_ai_service: OpenAIService = Depends()):
+    articles = news_api_service.get_articles(request.topic, request.page_number, request.start_date,
+                                             request.end_date).get("news")
+    for article in articles:
+        structured_article = news_api_service.transform_article(article)
+        document_id = media_service.store_article("articles", structured_article)
+        open_ai_service.create_keywords(document_id, article.get("text"))
+        open_ai_service.create_summary(document_id, article.get("text"), 100)
+
+
+@router.post("/articles/news/all")
+def store_all_articles_from_news_api(request: NewsApiRequest,
+                                     media_service: MediaService = Depends(),
+                                     news_api_service: NewsApiService = Depends(),
+                                     open_ai_service: OpenAIService = Depends()):
+    page_number = 1
+    response = news_api_service.get_articles(request.topic, page_number, request.start_date, request.end_date)
+    articles = response.get("news")
+    #this makes sure all articles are retrievedsend_request
+    while response.get("count") != 0:
+        print("PAGE: " + str(page_number))
+        for article in articles:
+            structured_article = news_api_service.transform_article(article)
+            document_id = media_service.store_article("articles", structured_article)
+            open_ai_service.create_keywords(document_id, article.get("text"))
+            open_ai_service.create_summary(document_id, article.get("text"), 100)
+
+        page_number += 1
+        #currently stopped at page 1
+        break
+        # response = news_api_service.get_articles(request.topic, page_number, request.start_date, request.end_date)
+        # print(response.get("count"))
+        # articles = response.get("news")
+
 @router.post("/articles/{collection_name}", status_code=201)
 def add_article_to_collection(article: Article, collection_name: str, media_service: MediaService = Depends()):
     collection = media_service.get_collection(collection_name)
@@ -105,20 +158,6 @@ def get_amount_of_tokens_of_article(article_id: str, media_service: MediaService
     article = media_service.get_article_by_id(collection, article_id)
 
     return media_service.count_token(article.get("documents")[0])
-
-
-@router.post("/articles/news/{start_date}/{end_date}")
-def store_articles_from_news_api(start_date: str,
-                                 end_date: str,
-                                 media_service: MediaService = Depends(),
-                                 news_api_service: NewsApiService = Depends(),
-                                 open_ai_service: OpenAIService = Depends()):
-    articles = news_api_service.get_articles(1, start_date, end_date).get("news")
-    for article in articles:
-        structured_article = news_api_service.transform_article(article)
-        document_id = media_service.store_article("articles", structured_article)
-        open_ai_service.create_keywords(document_id, article.get("text"))
-        open_ai_service.create_summary(document_id, article.get("text"), 100)
 
 
 @router.get("/articles/{collection_name}/{document_id}")

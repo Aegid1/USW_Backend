@@ -1,4 +1,5 @@
 import json
+import time
 
 from fastapi import APIRouter, Depends
 from app.services.ChatService import ChatService
@@ -25,6 +26,9 @@ async def create_thread_id(open_ai_service: OpenAIService = Depends()):
 
 @router.post("/chat/{thread_id}", status_code=200)
 async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depends()):
+
+    start_time = time.time()
+
     message_text = message.get("text", "")
 
     #send message to thread
@@ -44,5 +48,6 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
     time.sleep(2)
 
     messages = open_ai_service.retrieve_messages_from_thread(thread_id)
-
+    print("Code execution time: ")
+    print(time.time() - start_time)
     return messages.data[0].content[0].text.value

@@ -18,13 +18,14 @@ class MediaService:
     else:
         client = chromadb.HttpClient(host="localhost", port=8000)
 
-    def store_article(self, collection, article: dict):
+    def store_article(self, collection_name, article: dict):
         content = article.get("content")
         metadata = article.get("metadata")
+        collection = self.get_collection(collection_name)
         ids = []
         availability = False
 
-        while availability == False:
+        while not availability:
             generated_id = str(uuid.uuid4())
             availability = self.__is_id_available(generated_id, collection)
 
@@ -35,19 +36,22 @@ class MediaService:
         )
         return generated_id
 
-    def store_multiple_articles(self, collection, articles):
+    def store_multiple_articles(self, collection_name, articles):
         contents = [article["content"] for article in articles]
         metadata = [article["metadata"] for article in articles]
+        collection = self.get_collection(collection_name)
         ids = []
 
         #creates for every document a id and checks if available or not
         for article in articles:
             availability = False
-            while availability == False:
+            generated_id = ""
+            while not availability:
                 generated_id = str(uuid.uuid4())
                 availability = self.__is_id_available(generated_id, collection)
-                if availability:
-                    ids.append(generated_id)
+                print(availability)
+
+            ids.append(generated_id)
 
         collection.add(
             documents=contents,
@@ -90,5 +94,4 @@ class MediaService:
     def __is_id_available(self, article_id, collection):
         if collection.get(article_id).get("data") is None:
             return True
-
         return False

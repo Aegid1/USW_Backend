@@ -15,7 +15,7 @@ class OpenAIService:
         tools = [{
             "type": "function",
             "function": {
-                "name": "solve_problem",
+                "name": "solve_problem_parallelization",
                 # hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
                 "description": "Löse das problem, das aus dem user request hervorgeht, dass sich auf ein politisches Problem bezieht.",
                 "parameters": {
@@ -45,7 +45,7 @@ class OpenAIService:
     mediaservice = MediaService()
 
     @staticmethod
-    def solve_problem_with_parallelization(query: str, user_prompt: str):
+    def solve_problem_parallelization(query: str, user_prompt: str):
 
         mediaservice = MediaService()
         openai_service = OpenAIService()
@@ -53,7 +53,7 @@ class OpenAIService:
 
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
         articles = mediaservice.get_articles(10, query=query)
-        articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 5)
+        articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 10)
 
         results = []
 
@@ -65,7 +65,6 @@ class OpenAIService:
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result = future.result()
-                    print(result)
                     results.append(result.data[0].content[0].text.value)
                 except Exception as exc:
                     print(f"list of articles generated an exception: {exc}")
@@ -75,13 +74,13 @@ class OpenAIService:
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(2)
         openai_service.execute_thread(thread_id.id)
-        return openai_service.retrieve_messages_from_thread(thread_id.id)
+        final_result = openai_service.retrieve_messages_from_thread(thread_id.id)
+        return final_result.data[0].content[0].text.value
 
     @staticmethod
     def solve_problem(query: str, user_prompt: str):
 
         mediaservice = MediaService()
-
         openai_service = OpenAIService()
 
         # laden wir hier wirklich schon alle Artikel auf einmal rein?
@@ -104,11 +103,11 @@ class OpenAIService:
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(2)
         openai_service.execute_thread_without_function_calling(thread_id.id)
-        messages = openai_service.retrieve_messages_from_thread(thread_id.id)
-        return messages.data[0].content[0].text.value
+        final_result = openai_service.retrieve_messages_from_thread(thread_id.id)
+        return final_result.data[0].content[0].text.value
 
     function_lookup = {
-        "solve_problem": solve_problem
+        "solve_problem": solve_problem_parallelization
     }
 
     def create_thread(self):
@@ -207,11 +206,11 @@ class OpenAIService:
                 "max_tokens": 1000
             }
         }
-        return self.__add_to_batch(request, "test_batch.jsonl")
+        return self.__add_to_batch(request, "batch_keywords.jsonl")
 
     #das hier muss an die Batch-API gesendet werden -> eigener Batch
     def create_summary(self, document_id: str, text: str, length):
-        text = "kannst du mir Zusammenfassung des folgenden Artikels in " + length + " Wörtern geben" + text
+        text = "kannst du mir eine Zusammenfassung des folgenden Artikels in maximal " + str(length) + " Wörtern geben, ohne den Wortlaut des Artikels zu verändern: " + text
 
         request = {
             "custom_id": document_id,
@@ -233,7 +232,7 @@ class OpenAIService:
                 "max_tokens": 1000
             }
         }
-        return self.__add_to_batch(request, "test_batch.jsonl")
+        return self.__add_to_batch(request, "batch_summary.jsonl")
 
     def send_batch(self, batch_name: str):
         batch_input_file = self.client.files.create(
@@ -249,7 +248,7 @@ class OpenAIService:
             }
         )
         with open("batch_ids", 'a') as file:
-            file.write(batch.id)
+            file.write('\n' + batch.id)
 
     def retrieve_batch_content(self, batch_id: str, content_type):
         batch = self.client.batches.retrieve(batch_id)
