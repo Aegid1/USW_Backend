@@ -8,8 +8,8 @@ file_path = "topics"
 
 # Definieren Sie das JSON-Template
 request_template = {
-    "start_date": "17/12/2023",
-    "end_date": "18/05/2024",
+    "start_date": "01/05/2023",
+    "end_date": "01/05/2024",
     "page_number": 1,
     "topic": ""
 }

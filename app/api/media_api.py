@@ -126,11 +126,11 @@ def store_all_articles_from_news_api(request: NewsApiRequest,
             open_ai_service.create_summary(document_id, article.get("text"), 100)
 
         page_number += 1
-        #currently stopped at page 1
-        break
-        # response = news_api_service.get_articles(request.topic, page_number, request.start_date, request.end_date)
-        # print(response.get("count"))
-        # articles = response.get("news")
+        #currently stopped at page 9, because we want to have 100 articles of a year
+        if(page_number == 10): break
+        response = news_api_service.get_articles(request.topic, page_number, request.start_date, request.end_date)
+        print(response.get("count"))
+        articles = response.get("news")
 
 @router.post("/articles/{collection_name}", status_code=201)
 def add_article_to_collection(article: Article, collection_name: str, media_service: MediaService = Depends()):
