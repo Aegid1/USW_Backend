@@ -16,7 +16,7 @@ class OpenAIService:
             "type": "function",
             "function": {
                 "name": "solve_problem_parallelization",
-                # hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
+                #TODO() hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
                 "description": "Löse das problem, das aus dem user request hervorgeht, dass sich auf ein politisches Problem bezieht.",
                 "parameters": {
                     "type": "object",
@@ -27,10 +27,19 @@ class OpenAIService:
                         },
                         "user_prompt": {
                             "type": "string",
-                            "description": "Der user prompt, der das problem beinhaltet, das gelöst werden soll"
+                            #TODO() maybe without the information about the graph
+                            "description": "Der user prompt, der das problem beinhaltet, das gelöst werden soll, ohne die Information der Visualisierungsinformation"
+                        },
+                        "chart_type": {
+                            "type": "string",
+                            "description": "der Typ der Visualisierung, der vom user gewünscht wird"
+                        },
+                        "date": {
+                            "type": "string",
+                            "description": "die Zeitspanne die berücksichtigt werden soll, von heute aus"
                         }
                     },
-                    "required": ["query", "user_prompt"]
+                    "required": ["query", "user_prompt", "chart_type", "date"]
                 }
             }
         }]
@@ -45,14 +54,22 @@ class OpenAIService:
     mediaservice = MediaService()
 
     @staticmethod
-    def solve_problem_parallelization(query: str, user_prompt: str):
+    def solve_problem_parallelization(query: str, user_prompt: str, chart_type: str, date: str):
 
         mediaservice = MediaService()
         openai_service = OpenAIService()
         thread_id = openai_service.create_thread()
 
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
+        #TODO() maybe move the addition of the date to the content into the background tasks -> batch_processing
         articles = mediaservice.get_articles(10, query=query)
+        articles_without_date = articles.get("documents")[0]
+
+        for i in range(len(articles.get("metadatas")[0])):
+            # for example: "text " += "12.02.2022"
+            articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
+            print(articles_without_date)
+
         articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 10)
 
         results = []
@@ -71,7 +88,9 @@ class OpenAIService:
 
         #combines the results for one final result
         request = user_prompt + "\n" + "\n\n".join(results)
+        #TODO() Hier die info des chart_type verwenden für visualisierung
         openai_service.send_message_to_thread(thread_id.id, request)
+        #TODO() Werden hier 2 sekunden gebraucht?
         time.sleep(2)
         openai_service.execute_thread(thread_id.id)
         final_result = openai_service.retrieve_messages_from_thread(thread_id.id)
