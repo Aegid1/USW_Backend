@@ -1,4 +1,6 @@
 import json
+import os
+import subprocess
 import time
 import re
 
@@ -81,21 +83,26 @@ class OpenAIService:
             concurrent.futures.wait(futures)
             for future in concurrent.futures.as_completed(futures):
                 try:
+                    #if future.done():
                     result = future.result()
                     results.append(result)
                 except Exception as exc:
                     print(f"list of articles generated an exception: {exc}")
 
         #combines the results for one final result
-        request = user_prompt + "\n" + "\n\n".join(results)
-        print(request)
-        #TODO() Hier die info des chart_type verwenden für visualisierung
+        request = "Kannst du mir den python-code generieren um ein " + chart_type + " mit streamlit mit den folgenden Daten zu erstellen: " + "\n" + "\n".join(results)
+
         openai_service.send_message_to_thread(thread_id.id, request)
-        #TODO() Werden hier 2 sekunden gebraucht?
-        time.sleep(2)
+        time.sleep(1)
+
         openai_service.execute_thread(thread_id.id)
-        final_result = openai_service.retrieve_messages_from_thread(thread_id.id)
-        return final_result.data[0].content[0].text.value
+        final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
+
+        extracted_code = OpenAIService.__extract_generated_code(final_result)
+
+        OpenAIService.__execute_generated_code(extracted_code)
+
+        return "Hier ist das gewünschte " + chart_type
 
     @staticmethod
     def solve_problem(query: str, user_prompt: str):
@@ -349,3 +356,27 @@ class OpenAIService:
             matches = re.findall(pattern, analysis)
 
         return matches
+
+    @staticmethod
+    def __extract_generated_code(request: str):
+        code_match = re.search(r'```python\n(.*?)\n```', request, re.DOTALL)
+        if code_match:
+            extracted_code = code_match.group(1)
+
+            return extracted_code
+
+    @staticmethod
+    def __execute_generated_code(extracted_code: str):
+        with open("extracted_streamlit_app.py", "w") as code_file:
+            code_file.write(extracted_code)
+
+        process = subprocess.Popen(["streamlit", "run", "extracted_streamlit_app.py"])
+
+        time.sleep(10)
+        process.terminate()
+
+        if os.path.exists("extracted_streamlit_app.py"):
+            os.remove("extracted_streamlit_app.py")
+            print(f"Die Datei wurde gelöscht.")
+        else:
+            print(f"Die Datei wurde nicht gefunden.")
