@@ -380,3 +380,4 @@ class OpenAIService:
             print(f"Die Datei wurde gelöscht.")
         else:
             print(f"Die Datei wurde nicht gefunden.")
+
