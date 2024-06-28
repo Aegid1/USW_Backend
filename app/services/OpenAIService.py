@@ -1,5 +1,6 @@
 import json
 import time
+import re
 
 import yaml
 from openai import OpenAI
@@ -15,7 +16,7 @@ class OpenAIService:
         tools = [{
             "type": "function",
             "function": {
-                "name": "solve_problem_parallelization",
+                "name": "solve_problem",
                 #TODO() hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
                 "description": "Löse das problem, das aus dem user request hervorgeht, dass sich auf ein politisches Problem bezieht.",
                 "parameters": {
@@ -62,19 +63,18 @@ class OpenAIService:
 
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
         #TODO() maybe move the addition of the date to the content into the background tasks -> batch_processing
-        articles = mediaservice.get_articles(10, query=query)
+        articles = mediaservice.get_articles(50, query=query)
         articles_without_date = articles.get("documents")[0]
 
         for i in range(len(articles.get("metadatas")[0])):
             # for example: "text " += "12.02.2022"
             articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
-            print(articles_without_date)
 
         articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 10)
 
         results = []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = [executor.submit(openai_service.__process_article_list, article_list, user_prompt) for
                        article_list in
                        articles_divided]
@@ -82,12 +82,13 @@ class OpenAIService:
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result = future.result()
-                    results.append(result.data[0].content[0].text.value)
+                    results.append(result)
                 except Exception as exc:
                     print(f"list of articles generated an exception: {exc}")
 
         #combines the results for one final result
         request = user_prompt + "\n" + "\n\n".join(results)
+        print(request)
         #TODO() Hier die info des chart_type verwenden für visualisierung
         openai_service.send_message_to_thread(thread_id.id, request)
         #TODO() Werden hier 2 sekunden gebraucht?
@@ -156,7 +157,7 @@ class OpenAIService:
         return self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant.id,
-            instructions="you are an analyst that does sentiment-analysis of media-articles, talk in a professional and reasoning way"
+            instructions="you are a sentiment-analyst, I give you text wrapped in quotes on a topic and you analyze it"
         )
 
     def execute_thread_without_function_calling(self, thread_id):
@@ -293,7 +294,9 @@ class OpenAIService:
     def __process_article_list(self, article_list, user_prompt):
         thread_id = self.create_thread()
         request = "\n\n".join(article_list)
-        request = user_prompt + "\n" + request
+        request = ("Du bist ein Sentimentanalyse assistent, ich gebe dir Texte und du gibst mir die Ergebnisse zu "
+                   "diesem Thema") + user_prompt + "\n" + request + "\n" + ("Ergebnise bitte in diesem Format ohne "
+                                                                            "Text: Datum, Ergebnis")
 
         self.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
@@ -304,9 +307,25 @@ class OpenAIService:
             print(run.status)
             time.sleep(1)
 
-        print("----------------------------------------------------------------------------")
-        print("JETZT IST FERTIG")
-        return self.retrieve_messages_from_thread(thread_id.id)
+        result = self.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
+        extracted_result = OpenAIService.__extract_analysis_results(result)
+        #the result of the model is not as expected - one final chance
+        if(len(extracted_result) == 0):
+            #this prompt mostly solves the problem, the model seems sometimes a little confused with these types of tasks
+            self.send_message_to_thread(thread_id, "warum nicht?")
+            time.sleep(1)
+            run = self.execute_thread_without_function_calling(thread_id.id)
+
+            while run.status not in ['completed', 'failed']:
+                run = self.retrieve_execution(thread_id.id, run.id)
+                print(run.status)
+                time.sleep(1)
+
+            result = self.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
+
+        result = OpenAIService.__extract_analysis_results(result)
+
+        return str(result)
 
     @staticmethod
     def __divide_lists(data: list, n: int) -> list[list]:
@@ -319,3 +338,14 @@ class OpenAIService:
         with open(file_name, 'a') as file:
             json_str = json.dumps(request)
             file.write(json_str + '\n')
+
+    @staticmethod
+    def __extract_analysis_results(analysis: str):
+        pattern = r'(\d{1,4}[-/]\d{1,2}[-/]\d{2}),\s*(\w+)'
+        matches = re.findall(pattern, analysis)
+
+        if len(matches) == 0:
+            pattern = r'(\d{1,4}[-/]\d{1,2}[-/]\d{2}):\s*(\w+)'
+            matches = re.findall(pattern, analysis)
+
+        return matches
