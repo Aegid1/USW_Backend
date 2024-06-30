@@ -28,7 +28,7 @@ async def create_thread_id(open_ai_service: OpenAIService = Depends()):
 async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depends()):
 
     start_time = time.time()
-
+    analysis_performed = False
     message_text = message.get("text", "")
 
     #send message to thread
@@ -44,8 +44,13 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
         run = open_ai_service.retrieve_execution(thread_id, run.id)
         if run.status == 'requires_action':
             run = open_ai_service.submit_tool_outputs(thread_id, run.id, run.required_action.submit_tool_outputs.tool_calls)
+            analysis_performed = True
 
-    time.sleep(2)
+    #TODO this is currently only hard coded
+    if analysis_performed:
+        return "This is the result: "
+
+    time.sleep(1)
 
     messages = open_ai_service.retrieve_messages_from_thread(thread_id)
     print("Code execution time: ")

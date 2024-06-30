@@ -19,27 +19,26 @@ class OpenAIService:
             "type": "function",
             "function": {
                 "name": "solve_problem",
-                #TODO() hier noch mit dem prompt engineering rumprobieren -> vielleicht mit Hinweis auf code generierung
-                "description": "Löse das problem, das aus dem user request hervorgeht, dass sich auf ein politisches Problem bezieht.",
+                "description": "Solve the problem resulting from the user request that relates to a political problem.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Die query, welche die benötigten Daten aus der chromadb sammelt um das problem zu lösen"
+                            #TODO adjust the query to take equally distributed data from database
+                            "description": "The query that collects the required data from the chromadb to solve the problem"
                         },
                         "user_prompt": {
                             "type": "string",
-                            #TODO() maybe without the information about the graph
-                            "description": "Der user prompt, der das problem beinhaltet, das gelöst werden soll, ohne die Information der Visualisierungsinformation"
+                            "description": "The user prompt containing the problem to be solved without the information of the visualization information"
                         },
                         "chart_type": {
                             "type": "string",
-                            "description": "der Typ der Visualisierung, der vom user gewünscht wird"
+                            "description": "the type of visualization requested by the user"
                         },
                         "date": {
                             "type": "string",
-                            "description": "die Zeitspanne die berücksichtigt werden soll, von heute aus"
+                            "description": "the period of time to be taken into account from today"
                         }
                     },
                     "required": ["query", "user_prompt", "chart_type", "date"]
@@ -59,12 +58,14 @@ class OpenAIService:
     @staticmethod
     def solve_problem_parallelization(query: str, user_prompt: str, chart_type: str, date: str):
 
+        print("ANALYSE WIRD GESTARTET")
         mediaservice = MediaService()
         openai_service = OpenAIService()
+        print("TOOLS: " + str(openai_service.assistant.tools))
+
         thread_id = openai_service.create_thread()
 
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
-        #TODO() maybe move the addition of the date to the content into the background tasks -> batch_processing
         articles = mediaservice.get_articles(50, query=query)
         articles_without_date = articles.get("documents")[0]
 
@@ -83,26 +84,30 @@ class OpenAIService:
             concurrent.futures.wait(futures)
             for future in concurrent.futures.as_completed(futures):
                 try:
-                    #if future.done():
                     result = future.result()
                     results.append(result)
                 except Exception as exc:
                     print(f"list of articles generated an exception: {exc}")
 
         #combines the results for one final result
-        request = "Kannst du mir den python-code generieren um ein " + chart_type + " mit streamlit mit den folgenden Daten zu erstellen: " + "\n" + "\n".join(results)
+        request = "Can you generate the python code for me to create a " + chart_type + " with streamlit with the following data: " + "\n" + "\n".join(results)
 
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
 
-        openai_service.execute_thread(thread_id.id)
-        final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
+        run = openai_service.execute_thread_without_function_calling(thread_id.id)
 
+        while run.status not in ['completed', 'failed']:
+            run = openai_service.retrieve_execution(thread_id.id, run.id)
+            print(run.status)
+            time.sleep(1)
+
+        final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
         extracted_code = OpenAIService.__extract_generated_code(final_result)
 
         OpenAIService.__execute_generated_code(extracted_code)
 
-        return "Hier ist das gewünschte " + chart_type
+        return "Here is the desired " + chart_type
 
     @staticmethod
     def solve_problem(query: str, user_prompt: str):
@@ -123,9 +128,9 @@ class OpenAIService:
 
         thread_id = openai_service.create_thread()
         # combines the results for one final result
-        request = user_prompt + "\n" + ("mit den folgenden Materialien (ohne Veränderung des Wortlauts in den "
-                                        "Artikeln), sodass es als Zwischenergebnis für folgende Analysen verwendet "
-                                        "werden kann") + "\n\n".join(results)
+        request = user_prompt + "\n" + ("with the following materials (without changing the wording in the "
+                                        " articles) so that it can be used as an interim result for the following analyses "
+                                        " can be used") + "\n\n".join(results)
 
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(2)
@@ -211,7 +216,7 @@ class OpenAIService:
 
     #das hier muss an die Batch-API gesendet werden -> eigener Batch
     def create_keywords(self, document_id, text):
-        text = "kannst du mir lediglich 5 keywords zu folgendem Artikel nennen ohne Nummerierung oder Vergleichbares" + text
+        text = "can you just give me 5 keywords for the following article without numbering or similar" + text
 
         request = {
             "custom_id": document_id,
@@ -222,8 +227,8 @@ class OpenAIService:
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Du bist ein hilfreicher Assistent, der anhand eines Artikels 5 repräsentative Keywords ableitet,"
-                                   "die er nacheinander, nur durch ein Komma getrennt, nennt."
+                        "content": "You are a helpful assistant who derives 5 representative keywords from an article,"
+                                   "which he names one after the other, separated only by a comma."
                     },
                     {
                         "role": "user",
@@ -237,7 +242,7 @@ class OpenAIService:
 
     #das hier muss an die Batch-API gesendet werden -> eigener Batch
     def create_summary(self, document_id: str, text: str, length):
-        text = "kannst du mir eine Zusammenfassung des folgenden Artikels in maximal " + str(length) + " Wörtern geben, ohne den Wortlaut des Artikels zu verändern: " + text
+        text = "can you send me a summary of the following article in max. " + str(length) + " words without changing the wording of the article: " + text
 
         request = {
             "custom_id": document_id,
@@ -248,8 +253,8 @@ class OpenAIService:
                 "messages": [
                     {
                         "role": "system",
-                        "content": "Du bist ein hilfreicher Assistent, der eine prägnante aber detaillierte Zusammenfassung"
-                                   "aus einem Artikel schreibst"
+                        "content": "You are a helpful assistant who writes a concise but detailed summary"
+                                   "from an article"
                     },
                     {
                         "role": "user",
@@ -301,9 +306,9 @@ class OpenAIService:
     def __process_article_list(self, article_list, user_prompt):
         thread_id = self.create_thread()
         request = "\n\n".join(article_list)
-        request = ("Du bist ein Sentimentanalyse assistent, ich gebe dir Texte und du gibst mir die Ergebnisse zu "
-                   "diesem Thema") + user_prompt + "\n" + request + "\n" + ("Ergebnise bitte in diesem Format ohne "
-                                                                            "Text: Datum, Ergebnis")
+        request = ("You are a sentiment analysis assistant, I give you texts and you give me the results on "
+                   " this topic") + user_prompt + "\n" + request + "\n" + ("Please enter results in this format without "
+                                                                            " text: Date, result")
 
         self.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
@@ -319,7 +324,7 @@ class OpenAIService:
         #the result of the model is not as expected - one final chance
         if(len(extracted_result) == 0):
             #this prompt mostly solves the problem, the model seems sometimes a little confused with these types of tasks
-            self.send_message_to_thread(thread_id, "warum nicht?")
+            self.send_message_to_thread(thread_id, "why not?")
             time.sleep(1)
             run = self.execute_thread_without_function_calling(thread_id.id)
 
@@ -332,7 +337,7 @@ class OpenAIService:
 
         result = OpenAIService.__extract_analysis_results(result)
 
-        return str(result)
+        return str(result).lower()
 
     @staticmethod
     def __divide_lists(data: list, n: int) -> list[list]:
@@ -359,6 +364,8 @@ class OpenAIService:
 
     @staticmethod
     def __extract_generated_code(request: str):
+        print(request)
+
         code_match = re.search(r'```python\n(.*?)\n```', request, re.DOTALL)
         if code_match:
             extracted_code = code_match.group(1)
