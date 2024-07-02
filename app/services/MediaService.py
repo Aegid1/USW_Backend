@@ -62,7 +62,16 @@ class MediaService:
 
         return collection.query(
             query_texts=[query],
-            n_results=number_of_articles
+            n_results=number_of_articles,
+        )
+
+    def get_articles_by_date(self, number_of_articles, query, start_date, end_date, collection_name="articles"):
+        collection = self.get_collection(collection_name)
+
+        return collection.query(
+            query_texts=[query],
+            n_results=number_of_articles,
+            where={"$and":[{"date_count": {"$gte": start_date}}, {"date_count": {"$lt": end_date}}]}
         )
 
     def get_collection(self, collection_name):
@@ -102,7 +111,7 @@ class MediaService:
 
                 batch = dict(batch)
 
-                article_date_str = batch["metadatas"][0]["published"] #is also in the format YYYY-MM-DD
+                article_date_str = batch["metadatas"][0]["published"]
                 article_date = datetime.strptime(article_date_str, "%Y-%m-%d").date()
 
                 date_count = article_date - start_date

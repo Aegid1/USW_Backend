@@ -31,15 +31,22 @@ class NewsApiService:
         return response.json()
 
     def transform_article(self, article, text="", keywords=""):
+        start_date_str = "2010-01-01"
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        article_date_str = self.__transform_date(article.get("date"))
+        article_date = datetime.strptime(article_date_str, "%Y-%m-%d").date()
+        date_count = article_date - start_date
+
         transformed_article = {
             "content": text,
             "metadata": {
                 "keywords": keywords,
                 "title": article.get("title"),
                 "author": "placeholder",
-                "published": self.__transform_date(article.get("date")),
+                "published": article_date_str,
                 "publisher": article.get("publisher").get("title"),
                 "url": article.get("url"),
+                "date_count": date_count.days
             }
         }
         return transformed_article

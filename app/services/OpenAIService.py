@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 import re
+from datetime import datetime, timedelta
 
 import yaml
 from openai import OpenAI
@@ -35,11 +36,18 @@ class OpenAIService:
                             "type": "string",
                             "description": "the type of visualization requested by the user"
                         },
-                        #TODO test other dates and see how well it works
                         "time_period": {
                             "type": "string",
                             "description": "the time period to be taken into account when the current date is " + time.strftime("%Y-%m-%d") +  ", in the format YYYY-MM-DD:YYYY-MM-DD"
+                        },
+                        "sentiment_categories": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "the sentiment categories mentioned in the analysis"
                         }
+
                     },
                     "required": ["topic", "user_prompt", "chart_type", "time_period"]
                 }
@@ -56,25 +64,22 @@ class OpenAIService:
     mediaservice = MediaService()
 
     @staticmethod
-    def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str):
+    def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str, sentiment_categories: list):
 
-        print("DAS IST DAS ZEITFENSTER: " + time_period)
-        print(chart_type)
+        print(sentiment_categories)
+        lower_boundary, upper_boundary = OpenAIService.__create_date_boundaries(time_period)
+
         mediaservice = MediaService()
         openai_service = OpenAIService()
 
         thread_id = openai_service.create_thread()
 
-        #laden wir hier wirklich schon alle Artikel auf einmal rein?
-        articles = mediaservice.get_articles(50, query=topic)
+        articles = mediaservice.get_articles_by_date(50, topic, lower_boundary, upper_boundary)
         articles_without_date = articles.get("documents")[0]
 
         for i in range(len(articles.get("metadatas")[0])):
             # for example: "text " += "12.02.2022"
             articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
-
-        #TODO sort out all lists, that are not in the time period also look for how long this takes
-
 
         articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 10)
 
@@ -93,8 +98,7 @@ class OpenAIService:
                     print(f"list of articles generated an exception: {exc}")
 
         #combines the results for one final result
-        #ursprüngliche
-        request = "Can you generate the python code for me to create a " + chart_type + " with streamlit with the following data: " + "\n" + "\n".join(results)
+        request = "Can you generate the python code for me to create a " + chart_type + " with streamlit (make sure to flatten the lists) with the following data: " + "\n" + "\n".join(results)
 
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
@@ -395,3 +399,18 @@ class OpenAIService:
     def __sort_out_by_date(start_date: str, end_date: str, interval: str):
 
         pass
+
+    @staticmethod
+    def __create_date_boundaries(time_period: str):
+        initial_date_str = "2010-01-01"
+        initial_date = datetime.strptime(initial_date_str, "%Y-%m-%d").date()
+
+        start_date_str, end_date_str = time_period.split(":")
+
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+        upper_boundary = end_date - initial_date
+        lower_boundary = start_date - initial_date
+
+        return lower_boundary.days, upper_boundary.days
