@@ -23,10 +23,9 @@ class OpenAIService:
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "query": {
+                        "topic": {
                             "type": "string",
-                            #TODO adjust the query to take equally distributed data from database
-                            "description": "The query that collects the required data from the chromadb to solve the problem"
+                            "description": "The general topic of the user-request"
                         },
                         "user_prompt": {
                             "type": "string",
@@ -36,12 +35,13 @@ class OpenAIService:
                             "type": "string",
                             "description": "the type of visualization requested by the user"
                         },
-                        "date": {
+                        #TODO test other dates and see how well it works
+                        "time_period": {
                             "type": "string",
-                            "description": "the period of time to be taken into account from today"
+                            "description": "the time period to be taken into account when the current date is " + time.strftime("%Y-%m-%d") +  ", in the format YYYY-MM-DD:YYYY-MM-DD"
                         }
                     },
-                    "required": ["query", "user_prompt", "chart_type", "date"]
+                    "required": ["topic", "user_prompt", "chart_type", "time_period"]
                 }
             }
         }]
@@ -56,22 +56,25 @@ class OpenAIService:
     mediaservice = MediaService()
 
     @staticmethod
-    def solve_problem_parallelization(query: str, user_prompt: str, chart_type: str, date: str):
+    def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str):
 
-        print("ANALYSE WIRD GESTARTET")
+        print("DAS IST DAS ZEITFENSTER: " + time_period)
+        print(chart_type)
         mediaservice = MediaService()
         openai_service = OpenAIService()
-        print("TOOLS: " + str(openai_service.assistant.tools))
 
         thread_id = openai_service.create_thread()
 
         #laden wir hier wirklich schon alle Artikel auf einmal rein?
-        articles = mediaservice.get_articles(50, query=query)
+        articles = mediaservice.get_articles(50, query=topic)
         articles_without_date = articles.get("documents")[0]
 
         for i in range(len(articles.get("metadatas")[0])):
             # for example: "text " += "12.02.2022"
             articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
+
+        #TODO sort out all lists, that are not in the time period also look for how long this takes
+
 
         articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 10)
 
@@ -90,6 +93,7 @@ class OpenAIService:
                     print(f"list of articles generated an exception: {exc}")
 
         #combines the results for one final result
+        #ursprüngliche
         request = "Can you generate the python code for me to create a " + chart_type + " with streamlit with the following data: " + "\n" + "\n".join(results)
 
         openai_service.send_message_to_thread(thread_id.id, request)
@@ -156,7 +160,7 @@ class OpenAIService:
             content=message_text
         )
 
-    #even necessary anymore?
+    #TODO not necessary anymore
     def derive_query_from_request(self, thread_id):
         return self.client.beta.threads.messages.create(
             thread_id=thread_id,
@@ -364,7 +368,6 @@ class OpenAIService:
 
     @staticmethod
     def __extract_generated_code(request: str):
-        print(request)
 
         code_match = re.search(r'```python\n(.*?)\n```', request, re.DOTALL)
         if code_match:
@@ -388,3 +391,7 @@ class OpenAIService:
         else:
             print(f"Die Datei wurde nicht gefunden.")
 
+    @staticmethod
+    def __sort_out_by_date(start_date: str, end_date: str, interval: str):
+
+        pass

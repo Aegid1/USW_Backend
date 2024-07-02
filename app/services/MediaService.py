@@ -2,11 +2,9 @@ import os
 import chromadb
 import uuid
 import tiktoken
+from datetime import datetime, timedelta
 
 from enum import Enum
-
-from fastapi import HTTPException
-
 
 class DocumentType(Enum):
     KEYWORDS = "KEYWORDS"
@@ -90,6 +88,34 @@ class MediaService:
         encoding = tiktoken.encoding_for_model("gpt-3.5-turbo-0125")
         tokens = encoding.encode(article)
         return len(tokens)
+
+    def update_date_counts_all_articles(self, collection):
+        start_date_str = "2010-01-01"
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+
+        for i in range(0, 1000, 1):
+            try:
+                batch = collection.get(
+                    include=["metadatas", "documents"],
+                    limit=1,
+                    offset=i)
+
+                batch = dict(batch)
+
+                article_date_str = batch["metadatas"][0]["published"] #is also in the format YYYY-MM-DD
+                article_date = datetime.strptime(article_date_str, "%Y-%m-%d").date()
+
+                date_count = article_date - start_date
+                batch["metadatas"][0]["date_count"] = date_count.days
+
+                collection.update(
+                    ids=batch["ids"],
+                    metadatas=batch["metadatas"]
+                )
+
+            except KeyError:
+                continue
+        print("Alle Artikel wurden erfolgreich aktualisiert.")
 
     def __is_id_available(self, article_id, collection):
         if collection.get(article_id).get("data") is None:
