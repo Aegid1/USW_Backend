@@ -20,7 +20,7 @@ class OpenAIService:
             "type": "function",
             "function": {
                 "name": "solve_problem",
-                "description": "Solve the problem resulting from the user request that relates to a political problem.",
+                "description": "Solve the problem resulting from the user request that relates to a problem.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -38,7 +38,8 @@ class OpenAIService:
                         },
                         "time_period": {
                             "type": "string",
-                            "description": "the time period to be taken into account when the current date is " + time.strftime("%Y-%m-%d") +  ", in the format YYYY-MM-DD:YYYY-MM-DD"
+                            "description": "the time period to be taken into account when the current date is " + time.strftime(
+                                "%Y-%m-%d") + ", in the format YYYY-MM-DD:YYYY-MM-DD"
                         },
                         "sentiment_categories": {
                             "type": "array",
@@ -46,10 +47,14 @@ class OpenAIService:
                                 "type": "string"
                             },
                             "description": "the sentiment categories mentioned in the analysis"
+                        },
+                        "time_series_given": {
+                            "type": "boolean",
+                            "description": "is True whether a time series is wanted in the request"
                         }
 
                     },
-                    "required": ["topic", "user_prompt", "chart_type", "time_period"]
+                    "required": ["topic", "user_prompt", "chart_type", "time_period", "time_series_given"]
                 }
             }
         }]
@@ -64,9 +69,11 @@ class OpenAIService:
     mediaservice = MediaService()
 
     @staticmethod
-    def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str, sentiment_categories: list):
+    def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str,
+                                      time_series_given: bool, sentiment_categories: list):
 
         print(sentiment_categories)
+        print(time_series_given)
         lower_boundary, upper_boundary = OpenAIService.__create_date_boundaries(time_period)
 
         mediaservice = MediaService()
@@ -86,9 +93,11 @@ class OpenAIService:
         results = []
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(openai_service.__process_article_list, article_list, user_prompt) for
-                       article_list in
-                       articles_divided]
+            futures = [
+                executor.submit(openai_service.__process_article_list, article_list, user_prompt, sentiment_categories)
+                for
+                article_list in
+                articles_divided]
             concurrent.futures.wait(futures)
             for future in concurrent.futures.as_completed(futures):
                 try:
@@ -98,7 +107,8 @@ class OpenAIService:
                     print(f"list of articles generated an exception: {exc}")
 
         #combines the results for one final result
-        request = "Can you generate the python code for me to create a " + chart_type + " with streamlit (make sure to flatten the lists) with the following data: " + "\n" + "\n".join(results)
+        request = "Can you generate the python code for me to create a " + chart_type + " with streamlit (make sure to flatten the lists) with the following data: " + "\n" + "\n".join(
+            results)
 
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
@@ -250,7 +260,8 @@ class OpenAIService:
 
     #das hier muss an die Batch-API gesendet werden -> eigener Batch
     def create_summary(self, document_id: str, text: str, length):
-        text = "can you send me a summary of the following article in max. " + str(length) + " words without changing the wording of the article: " + text
+        text = "can you send me a summary of the following article in max. " + str(
+            length) + " words without changing the wording of the article: " + text
 
         request = {
             "custom_id": document_id,
@@ -311,12 +322,13 @@ class OpenAIService:
         batch = self.client.batches.retrieve(batch_id)
         return batch.status
 
-    def __process_article_list(self, article_list, user_prompt):
+    def __process_article_list(self, article_list, user_prompt, expected_categories):
         thread_id = self.create_thread()
         request = "\n\n".join(article_list)
         request = ("You are a sentiment analysis assistant, I give you texts and you give me the results on "
-                   " this topic") + user_prompt + "\n" + request + "\n" + ("Please enter results in this format without "
-                                                                            " text: Date, result")
+                   " this topic") + user_prompt + "\n" + request + "\n" + (
+                      "Please enter results in this format without "
+                      " text: Date, result")
 
         self.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
@@ -329,8 +341,8 @@ class OpenAIService:
 
         result = self.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
         extracted_result = OpenAIService.__extract_analysis_results(result)
-        #the result of the model is not as expected - one final chance
-        if(len(extracted_result) == 0):
+
+        if (len(extracted_result) == 0):
             #this prompt mostly solves the problem, the model seems sometimes a little confused with these types of tasks
             self.send_message_to_thread(thread_id, "why not?")
             time.sleep(1)
@@ -344,8 +356,10 @@ class OpenAIService:
             result = self.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
 
         result = OpenAIService.__extract_analysis_results(result)
+        filtered_result = [item for item in result if item[1].lower() in expected_categories]
 
-        return str(result).lower()
+        print("RESULT: " + str(filtered_result).lower())
+        return str(filtered_result).lower()
 
     @staticmethod
     def __divide_lists(data: list, n: int) -> list[list]:

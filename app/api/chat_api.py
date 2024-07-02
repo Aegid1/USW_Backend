@@ -31,13 +31,10 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
     analysis_performed = False
     message_text = message.get("text", "")
 
-    #send message to thread
     message = open_ai_service.send_message_to_thread(thread_id, message_text)
 
-    #run thread with the assigned message
     run = open_ai_service.execute_thread(thread_id)
 
-    #check if its a normal request or needs more actions
     while run.status not in ['completed', 'failed']:
         print(run.status)
         time.sleep(1)

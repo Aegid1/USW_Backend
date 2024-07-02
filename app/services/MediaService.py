@@ -126,6 +126,41 @@ class MediaService:
                 continue
         print("Alle Artikel wurden erfolgreich aktualisiert.")
 
+    #TODO extract this method into a AnalysisService.py
+    def filter_documents_by_time_interval(self, articles, lower_boundary, upper_boundary):
+
+        article_per_intervall = {}
+
+        # unter 1 Jahr: 1 Tage Abstand -> end_date - start_date < 365
+        # ab 1 Jahr: 2 Tage Abstand ->  364 < end_date - start_date < 730
+        # ab 2 Jahr: 4 Tage Abstand ->  729 < end_date - start_date < 1065
+        # ab 3 Jahr: 8 Tage Abstand -> 1065 < end_date - start_date < 1430
+
+        def calculate_time_step(days):
+            if days < 365:
+                return 1
+            elif days < 730:
+                return 2
+            elif days < 1065:
+                return 4
+            else:
+                return 8
+
+        for article, metadata in zip(articles.get("documents")[0], articles.get("metadatas")[0]):
+
+            published_date = metadata['date_count']
+            days_difference = upper_boundary - lower_boundary
+            time_step = calculate_time_step(days_difference)
+
+            if (published_date - lower_boundary) % time_step == 0:
+                day = metadata["published"]
+                if day not in article_per_intervall:
+                    article_per_intervall[day] = (article, metadata)
+
+        chosen_articles = [(day, article, metadata) for day, (article, metadata) in
+                                sorted(article_per_intervall.items())]
+        return chosen_articles
+
     def __is_id_available(self, article_id, collection):
         if collection.get(article_id).get("data") is None:
             return True
