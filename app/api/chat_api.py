@@ -45,11 +45,21 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
 
     #TODO this is currently only hard coded
     if analysis_performed:
-        return "This is the result: "
+        print("Code execution time: ")
+        print(time.time() - start_time)
+        return {
+            "text": "Here is the result ",
+            "visualization_given": True
+        }
 
     time.sleep(1)
 
     messages = open_ai_service.retrieve_messages_from_thread(thread_id)
     print("Code execution time: ")
     print(time.time() - start_time)
-    return messages.data[0].content[0].text.value
+
+    return {
+        "text": messages.data[0].content[0].text.value,
+        "visualization_given": False
+    }
+

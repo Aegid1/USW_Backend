@@ -124,7 +124,7 @@ class MediaService:
 
             except KeyError:
                 continue
-        print("Alle Artikel wurden erfolgreich aktualisiert.")
+        print("all texts were successfully updated.")
 
     #TODO extract this method into a AnalysisService.py
     def filter_documents_by_time_interval(self, articles, lower_boundary, upper_boundary):
