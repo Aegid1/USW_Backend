@@ -158,9 +158,9 @@ class MediaService:
             print(str(existing_dates))
             published_date = metadata['date_count']
 
-            # wenn es dem nicht entspricht, fliegt es raus
+            # if it does not comply, it is thrown out
             if (published_date - lower_boundary) % time_step == 0:
-                # wenn es bereits drin ist, fliegt es raus
+                # if it's already in, it is thrown out
                 if published_date not in existing_dates:
                     existing_dates.append(published_date)
                 else:

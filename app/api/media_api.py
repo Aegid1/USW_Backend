@@ -134,8 +134,8 @@ def store_all_articles_from_news_api(request: NewsApiRequest,
             open_ai_service.create_summary(document_id, article.get("text"), 100)
 
         page_number += 1
-        #currently stopped at page 10, because we want to have 100 articles of a year
-        if (page_number == 11): break
+        #currently stopped at page 7, because we want to have atleast 70 articles of a month
+        if (page_number == 8): break
         response = news_api_service.get_articles(request.topic, page_number, request.start_date, request.end_date)
         print(response.get("count"))
         articles = response.get("news")
@@ -173,3 +173,4 @@ def get_amount_of_tokens_of_article(article_id: str, media_service: MediaService
 def get_specific_article_by_id(collection_name: str, document_id: str, media_service: MediaService = Depends()):
     collection = media_service.get_collection(collection_name)
     return media_service.get_article_by_id(collection, document_id)
+

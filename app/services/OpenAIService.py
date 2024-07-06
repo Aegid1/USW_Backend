@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 import yaml
 from openai import OpenAI
 import concurrent.futures
-from app.services.MediaService import MediaService
+from app.services.MediaService import MediaService, DocumentType
 
 
 class OpenAIService:
@@ -65,7 +65,8 @@ class OpenAIService:
     mediaservice = MediaService()
 
     @staticmethod
-    def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str, sentiment_categories: list):
+    def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str,
+                                      sentiment_categories: list):
 
         print(chart_type)
         print(sentiment_categories)
@@ -78,24 +79,17 @@ class OpenAIService:
         thread_id = openai_service.create_thread()
 
         articles = mediaservice.get_articles_by_date(50, topic, lower_boundary, upper_boundary)
-        print(len(articles.get("documents")[0]))
-        print(len(articles.get("metadatas")[0]))
 
         if chart_type == "timeseries" or chart_type == "time series":
             articles = mediaservice.filter_documents_by_time_interval(articles, lower_boundary, upper_boundary)
-            print(len(articles.get("documents")[0]))
-            print(len(articles.get("metadatas")[0]))
 
         articles_without_date = articles.get("documents")[0]
-        #print(len(articles_without_date))
-
         for i in range(len(articles.get("metadatas")[0])):
             articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
 
         articles_divided = OpenAIService.__divide_lists(articles_without_date, 10)
 
         results = []
-
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = [
                 executor.submit(openai_service.__process_article_list, article_list, user_prompt, sentiment_categories)
@@ -125,40 +119,66 @@ class OpenAIService:
             time.sleep(1)
 
         final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
-        extracted_code = OpenAIService.__extract_generated_code(final_result)
 
-        OpenAIService.__execute_generated_code(extracted_code)
+        try:
+            extracted_code = OpenAIService.__extract_generated_code(final_result)
+            OpenAIService.__execute_generated_code(extracted_code)
+        except RuntimeError as e:
+            return "Something went wrong with the execution of the generated code"
 
         return "Here is the desired " + chart_type
 
     @staticmethod
-    def solve_problem(query: str, user_prompt: str):
+    def solve_problem(topic: str, user_prompt: str, chart_type: str, time_period: str, sentiment_categories: list):
+
+        print(chart_type)
+        print(sentiment_categories)
+        print(time_period)
+        lower_boundary, upper_boundary = OpenAIService.__create_date_boundaries(time_period)
 
         mediaservice = MediaService()
         openai_service = OpenAIService()
 
-        # laden wir hier wirklich schon alle Artikel auf einmal rein?
-        articles = mediaservice.get_articles(10, query=query)
+        thread_id = openai_service.create_thread()
 
-        #TODO() number of articles per thread needs to be adjusted
-        articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 5)
+        articles = mediaservice.get_articles_by_date(200, topic, lower_boundary, upper_boundary)
+
+        if chart_type == "timeseries" or chart_type == "time series":
+            articles = mediaservice.filter_documents_by_time_interval(articles, lower_boundary, upper_boundary)
+
+        articles_without_date = articles.get("documents")[0]
+        for i in range(len(articles.get("metadatas")[0])):
+            articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
+
+        articles_divided = OpenAIService.__divide_lists(articles_without_date, 10)
+
         results = []
-
         for article_list in articles_divided:
-            result = openai_service.__process_article_list(article_list, user_prompt)
+            result = openai_service.__process_article_list(article_list, user_prompt, sentiment_categories)
             results.append(result.data[0].content[0].text.value)
 
-        thread_id = openai_service.create_thread()
-        # combines the results for one final result
-        request = user_prompt + "\n" + ("with the following materials (without changing the wording in the "
-                                        " articles) so that it can be used as an interim result for the following analyses "
-                                        " can be used") + "\n\n".join(results)
+        request = "Can you generate the python code for me to create a " + chart_type + " with streamlit (make sure to flatten the lists) with the following data: " + "\n" + "\n".join(
+            results)
 
         openai_service.send_message_to_thread(thread_id.id, request)
-        time.sleep(2)
-        openai_service.execute_thread_without_function_calling(thread_id.id)
-        final_result = openai_service.retrieve_messages_from_thread(thread_id.id)
-        return final_result.data[0].content[0].text.value
+        time.sleep(1)
+
+        run = openai_service.execute_thread_without_function_calling(thread_id.id)
+
+        while run.status not in ['completed', 'failed']:
+            run = openai_service.retrieve_execution(thread_id.id, run.id)
+            print(run.status)
+            time.sleep(1)
+
+        final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
+
+        try:
+            extracted_code = OpenAIService.__extract_generated_code(final_result)
+            OpenAIService.__execute_generated_code(extracted_code)
+        except RuntimeError as e:
+            return "Something went wrong with the execution of the generated code"
+
+        return "Here is the desired " + chart_type
 
     function_lookup = {
         "solve_problem": solve_problem_parallelization
@@ -167,24 +187,11 @@ class OpenAIService:
     def create_thread(self):
         return self.client.beta.threads.create()
 
-    def get_thread_id(self):
-        #TODO
-        pass
-
     def send_message_to_thread(self, thread_id, message_text):
         return self.client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=message_text
-        )
-
-    #TODO not necessary anymore
-    def derive_query_from_request(self, thread_id):
-        return self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content="Please derive a search query based on my previous message" +
-                    " so that all relevant articles on this topic can be collected from ChromaDB."
         )
 
     def execute_thread(self, thread_id):
@@ -302,8 +309,13 @@ class OpenAIService:
                 "description": "nightly eval job"
             }
         )
-        with open("batch_ids", 'a') as file:
-            file.write('\n' + batch.id)
+
+        if (batch_name == "batch_summary.jsonl"):
+            with open("batch_ids_summary", 'a') as file:
+                file.write('\n' + batch.id)
+        else:
+            with open("batch_ids_keywords", 'a') as file:
+                file.write('\n' + batch.id)
 
     def retrieve_batch_content(self, batch_id: str, content_type):
         batch = self.client.batches.retrieve(batch_id)
@@ -329,8 +341,9 @@ class OpenAIService:
     def __process_article_list(self, article_list, user_prompt, expected_categories):
         thread_id = self.create_thread()
         provided_data = "\n\n".join(article_list)
-        request = ("You are a sentiment analysis assistant" + "with these categories " + str(expected_categories) + ", I give you texts and you give me the results on "
-                   " this topic with these categories") + user_prompt + "\n" + provided_data + "\n" + (
+        request = ("You are a sentiment analysis assistant" + "with these categories " + str(
+            expected_categories) + ", I give you texts and you give me the results on "
+                                   " this topic with these categories") + user_prompt + "\n" + provided_data + "\n" + (
                       "Please enter results in this format without "
                       " text: Date, result")
 
@@ -347,7 +360,7 @@ class OpenAIService:
         extracted_result = OpenAIService.__extract_analysis_results(result)
 
         if (len(extracted_result) == 0):
-            #this prompt mostly solves the problem, the model seems sometimes a little confused with these types of tasks
+            #this prompt mostly solves the problem, the gpt-model-3.5 seems sometimes a little confused with these types of tasks
             self.send_message_to_thread(thread_id, "why not? Just use the provided texts by me")
             time.sleep(1)
             run = self.execute_thread_without_function_calling(thread_id.id)
@@ -362,12 +375,11 @@ class OpenAIService:
         result = OpenAIService.__extract_analysis_results(result)
         filtered_result = [item for item in result if item[1].lower() in expected_categories]
 
-        #print("RESULT: " + str(filtered_result).lower())
         return str(filtered_result).lower()
 
     @staticmethod
     def __divide_lists(data: list, n: int) -> list[list]:
-        """Teilt eine Liste in n gleichgroße Unterlisten auf"""
+        """Splits a list into n sublists of equal size"""
         k, m = divmod(len(data), n)
         return [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
 
@@ -390,29 +402,40 @@ class OpenAIService:
 
     @staticmethod
     def __extract_generated_code(request: str):
-
-        code_match = re.search(r'```python\n(.*?)\n```', request, re.DOTALL)
-        if code_match:
-            extracted_code = code_match.group(1)
-
-            return extracted_code
+        try:
+            code_match = re.search(r'```python\n(.*?)\n```', request, re.DOTALL)
+            if code_match:
+                extracted_code = code_match.group(1)
+                return extracted_code
+        except Exception as e:
+            raise RuntimeError("Error when extracting the generated code") from e
 
     @staticmethod
     def __execute_generated_code(extracted_code: str):
-        #TODO add ExceptionHandling
-        with open("extracted_streamlit_app.py", "w") as code_file:
-            code_file.write(extracted_code)
 
-        process = subprocess.Popen(["streamlit", "run", "extracted_streamlit_app.py"])
+        try:
+            with open("extracted_streamlit_app.py", "w") as code_file:
+                code_file.write(extracted_code)
 
-        time.sleep(10)
-        process.terminate()
+            process = subprocess.Popen(["streamlit", "run", "extracted_streamlit_app.py"],
+                                       stdout=subprocess.PIPE,
+                                       stderr=subprocess.PIPE
+                                       )
 
-        if os.path.exists("extracted_streamlit_app.py"):
-            os.remove("extracted_streamlit_app.py")
-            print(f"The file was deleted.")
-        else:
-            print(f"The file was not found.")
+            time.sleep(10)
+            process.terminate()
+
+            stdout, stderr = process.communicate()
+            if stderr:
+                raise RuntimeError(f"Error during Streamlit execution: {stderr.decode('utf-8')}")
+
+            if os.path.exists("extracted_streamlit_app.py"):
+                os.remove("extracted_streamlit_app.py")
+                print(f"The file was deleted.")
+            else:
+                print(f"The file was not found.")
+        except Exception as e:
+            raise RuntimeError("Error when executing the code") from e
 
     @staticmethod
     def __create_date_boundaries(time_period: str):
@@ -428,3 +451,32 @@ class OpenAIService:
         lower_boundary = start_date - initial_date
 
         return lower_boundary.days, upper_boundary.days
+
+    @staticmethod
+    def delete_batch_file(batch_type):
+        if batch_type == DocumentType.SUMMARY:
+            file_name = "batch_ids_summary"
+        else:
+            file_name = "batch_ids_keywords"
+
+        try:
+            os.remove(file_name)
+            print(f"File '{file_name}' deleted successfully.")
+        except OSError as e:
+            print(f"Error deleting file '{file_name}': {e}")
+
+    @staticmethod
+    def get_batch_ids(batch_type):
+        batch_ids = []
+        if batch_type == DocumentType.SUMMARY:
+            filename = "batch_ids_summary"
+        else:
+            filename = "batch_ids_keywords"
+
+        with open(filename, "r") as file:
+            for line in file:
+                batch_id = line.strip()
+                if batch_id:
+                    batch_ids.append(batch_id)
+        return batch_ids
+

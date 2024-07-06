@@ -47,6 +47,7 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
     if analysis_performed:
         print("Code execution time: ")
         print(time.time() - start_time)
+
         return {
             "text": "Here is the result ",
             "visualization_given": True
@@ -55,8 +56,6 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
     time.sleep(1)
 
     messages = open_ai_service.retrieve_messages_from_thread(thread_id)
-    print("Code execution time: ")
-    print(time.time() - start_time)
 
     return {
         "text": messages.data[0].content[0].text.value,
