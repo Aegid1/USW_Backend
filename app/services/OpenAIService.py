@@ -69,6 +69,7 @@ class OpenAIService:
 
         print(chart_type)
         print(sentiment_categories)
+        print(time_period)
         lower_boundary, upper_boundary = OpenAIService.__create_date_boundaries(time_period)
 
         mediaservice = MediaService()
@@ -77,13 +78,21 @@ class OpenAIService:
         thread_id = openai_service.create_thread()
 
         articles = mediaservice.get_articles_by_date(50, topic, lower_boundary, upper_boundary)
+        print(len(articles.get("documents")[0]))
+        print(len(articles.get("metadatas")[0]))
+
+        if chart_type == "timeseries" or chart_type == "time series":
+            articles = mediaservice.filter_documents_by_time_interval(articles, lower_boundary, upper_boundary)
+            print(len(articles.get("documents")[0]))
+            print(len(articles.get("metadatas")[0]))
+
         articles_without_date = articles.get("documents")[0]
-        print(len(articles_without_date))
+        #print(len(articles_without_date))
 
         for i in range(len(articles.get("metadatas")[0])):
             articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
 
-        articles_divided = OpenAIService.__divide_lists(articles.get("documents")[0], 10)
+        articles_divided = OpenAIService.__divide_lists(articles_without_date, 10)
 
         results = []
 
@@ -319,9 +328,9 @@ class OpenAIService:
 
     def __process_article_list(self, article_list, user_prompt, expected_categories):
         thread_id = self.create_thread()
-        request = "\n\n".join(article_list)
+        provided_data = "\n\n".join(article_list)
         request = ("You are a sentiment analysis assistant" + "with these categories " + str(expected_categories) + ", I give you texts and you give me the results on "
-                   " this topic with these categories") + user_prompt + "\n" + request + "\n" + (
+                   " this topic with these categories") + user_prompt + "\n" + provided_data + "\n" + (
                       "Please enter results in this format without "
                       " text: Date, result")
 

@@ -128,9 +128,6 @@ class MediaService:
 
     #TODO extract this method into a AnalysisService.py
     def filter_documents_by_time_interval(self, articles, lower_boundary, upper_boundary):
-
-        article_per_intervall = {}
-
         # unter 1 Jahr: 1 Tage Abstand -> end_date - start_date < 365
         # ab 1 Jahr: 2 Tage Abstand ->  364 < end_date - start_date < 730
         # ab 2 Jahr: 4 Tage Abstand ->  729 < end_date - start_date < 1065
@@ -146,20 +143,39 @@ class MediaService:
             else:
                 return 8
 
-        for article, metadata in zip(articles.get("documents")[0], articles.get("metadatas")[0]):
+        metadatas = articles.get("metadatas")[0]
+        texts = articles.get("documents")[0]
 
+        days_difference = upper_boundary - lower_boundary
+        time_step = calculate_time_step(days_difference)
+
+        # is for checking whether the date is already chosen
+        existing_dates = []
+
+        indices_to_remove = []
+
+        for index, (text, metadata) in enumerate(zip(texts, metadatas)):
+            print(str(existing_dates))
             published_date = metadata['date_count']
-            days_difference = upper_boundary - lower_boundary
-            time_step = calculate_time_step(days_difference)
 
+            # wenn es dem nicht entspricht, fliegt es raus
             if (published_date - lower_boundary) % time_step == 0:
-                day = metadata["published"]
-                if day not in article_per_intervall:
-                    article_per_intervall[day] = (article, metadata)
+                # wenn es bereits drin ist, fliegt es raus
+                if published_date not in existing_dates:
+                    existing_dates.append(published_date)
+                else:
+                    indices_to_remove.append(index)
+            else:
+                indices_to_remove.append(index)
 
-        chosen_articles = [(day, article, metadata) for day, (article, metadata) in
-                                sorted(article_per_intervall.items())]
-        return chosen_articles
+        for index in sorted(indices_to_remove, reverse=True):
+            del metadatas[index]
+            del texts[index]
+
+        articles["documents"][0] = texts
+        articles["metadatas"][0] = metadatas
+
+        return articles
 
     def __is_id_available(self, article_id, collection):
         if collection.get(article_id).get("data") is None:
