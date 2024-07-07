@@ -43,7 +43,6 @@ async def chat(thread_id, message: dict, open_ai_service: OpenAIService = Depend
             run = open_ai_service.submit_tool_outputs(thread_id, run.id, run.required_action.submit_tool_outputs.tool_calls)
             analysis_performed = True
 
-    #TODO this is currently only hard coded
     if analysis_performed:
         print("Code execution time: ")
         print(time.time() - start_time)

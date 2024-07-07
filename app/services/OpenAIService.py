@@ -4,7 +4,7 @@ import subprocess
 import time
 import re
 import ast
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import yaml
 from openai import OpenAI
@@ -94,20 +94,24 @@ class OpenAIService:
 
         thread_id = openai_service.create_thread()
 
-        articles = mediaservice.get_articles_by_date(400, topic, lower_boundary, upper_boundary)
-        print(len(articles.get("documents")[0]))
-        if chart_type == "timeseries" or chart_type == "time series":
+        if chart_type.lower() == "timeseries" or chart_type.lower() == "time series":
+            #we need more data when having a time series -> sometimes multiple articles on one day
+            articles = mediaservice.get_articles_by_date(600, topic, lower_boundary, upper_boundary)
+            print(len(articles.get("documents")[0]))
             articles = mediaservice.filter_documents_by_time_interval(articles, lower_boundary, upper_boundary)
+            print(len(articles.get("documents")[0]))
 
-        print(len(articles.get("documents")[0]))
+        else:
+            articles = mediaservice.get_articles_by_date(300, topic, lower_boundary, upper_boundary)
+
         articles_without_date = articles.get("documents")[0]
         for i in range(len(articles.get("metadatas")[0])):
             articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
 
-        articles_divided = OpenAIService.__divide_lists(articles_without_date, int(len(articles.get("documents")[0]) / 5))
+        articles_divided = OpenAIService.__divide_lists(articles_without_date, int(len(articles.get("documents")[0]) / 10))
 
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=int(len(articles.get("documents")[0]) / 5)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=int(len(articles.get("documents")[0]) / 10)) as executor:
             futures = [
                 executor.submit(openai_service.__process_article_list, article_list, user_prompt, sentiment_categories)
                 for
@@ -127,11 +131,16 @@ class OpenAIService:
             sublist = ast.literal_eval(sublist_str)
             flattened_results.extend(sublist)
 
-        request = ("Can you generate the python code for me to create a "
-                   + chart_type + " with streamlit with the following data: "
-                   + "\n" +"data = " + str(flattened_results)
-                   )
+        # request = ("Can you generate the directly executable python script for me to create a "
+        #            + chart_type + " with streamlit with the following data: "
+        #            + "\n" +"data = " + str(flattened_results)
+        #            + " make sure to use all the provided data, dont cut something off"
+        #            )
 
+        request = ("Can you generate the directly executable python script for me to create a "
+                   + chart_type + " with streamlit with like this: "
+                   + "\n" + "data = [('2024-05-08', '3')]"
+                   )
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
 
@@ -143,9 +152,8 @@ class OpenAIService:
             time.sleep(1)
 
         final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
-        print(final_result)
         try:
-            extracted_code = OpenAIService.__extract_generated_code(final_result)
+            extracted_code = OpenAIService.__extract_generated_code(final_result, flattened_results)
             OpenAIService.__execute_generated_code(extracted_code)
         except RuntimeError as e:
             return "Something went wrong with the execution of the generated code"
@@ -189,7 +197,12 @@ class OpenAIService:
 
         run = openai_service.execute_thread_without_function_calling(thread_id.id)
 
+        execution_counter = 0
         while run.status not in ['completed', 'failed']:
+            execution_counter += 1
+            if execution_counter > 60:
+                return "There was an issue with your request, try again"
+
             run = openai_service.retrieve_execution(thread_id.id, run.id)
             print(run.status)
             time.sleep(1)
@@ -363,42 +376,43 @@ class OpenAIService:
         return batch.status
 
     def __process_article_list(self, article_list, user_prompt, expected_categories):
-        thread_id = self.create_thread()
+        thread = self.create_thread()
         provided_data = "\n\n".join(article_list)
         request = ("You are a sentiment analysis assistant" + "with these categories " + str(
             expected_categories) + ", I give you texts and you give me the results on "
                                    " this topic with these categories") + user_prompt + "\n" + provided_data + "\n" + (
-                      "Please enter results in this format without "
-                      " text: Date, result")
+                      "Please enter results in this format without text: Date, result"
+        )
 
-        self.send_message_to_thread(thread_id.id, request)
+        self.send_message_to_thread(thread.id, request)
         time.sleep(1)
-        run = self.execute_thread_without_function_calling(thread_id.id)
+        run = self.execute_thread_without_function_calling(thread.id)
 
         while run.status not in ['completed', 'failed']:
-            run = self.retrieve_execution(thread_id.id, run.id)
+            run = self.retrieve_execution(thread.id, run.id)
             print(run.status)
             time.sleep(1)
 
-        result = self.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
+        time.sleep(0.5)
+        result = self.retrieve_messages_from_thread(thread.id).data[0].content[0].text.value
         extracted_result = OpenAIService.__extract_analysis_results(result)
 
         if (len(extracted_result) == 0):
             #this prompt mostly solves the problem, the gpt-model-3.5 seems sometimes a little confused with these types of tasks
-            self.send_message_to_thread(thread_id, "why not? Just use the provided texts by me")
+            self.send_message_to_thread(thread, "why not? Just use the provided texts by me")
             time.sleep(1)
-            run = self.execute_thread_without_function_calling(thread_id.id)
+            run = self.execute_thread_without_function_calling(thread.id)
 
             while run.status not in ['completed', 'failed']:
-                run = self.retrieve_execution(thread_id.id, run.id)
+                run = self.retrieve_execution(thread.id, run.id)
                 print(run.status)
                 time.sleep(1)
 
-            result = self.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
+            time.sleep(0.5)
+            result = self.retrieve_messages_from_thread(thread.id).data[0].content[0].text.value
 
         result = OpenAIService.__extract_analysis_results(result)
         filtered_result = [item for item in result if item[1].lower() in expected_categories]
-        print(str(filtered_result).lower())
 
         return str(filtered_result).lower()
 
@@ -426,11 +440,18 @@ class OpenAIService:
         return matches
 
     @staticmethod
-    def __extract_generated_code(request: str):
+    def __extract_generated_code(request: str, data):
         try:
             code_match = re.search(r'```python\n(.*?)\n```', request, re.DOTALL)
             if code_match:
                 extracted_code = code_match.group(1)
+                print(extracted_code)
+
+                data_str = str(data)
+
+                extracted_code = re.sub(r'data\s*=\s*\[\s*\(.*?\)\s*\]', f'data = {data_str}', extracted_code)
+                print(extracted_code)
+
                 return extracted_code
         except Exception as e:
             raise RuntimeError("Error when extracting the generated code") from e
@@ -451,8 +472,13 @@ class OpenAIService:
             process.terminate()
 
             stdout, stderr = process.communicate()
+
+            stdout = stdout.decode('utf-8')
+            stderr = stderr.decode('utf-8')
+            print(stderr)
+
             if stderr:
-                raise RuntimeError(f"Error during Streamlit execution: {stderr.decode('utf-8')}")
+                raise RuntimeError(f"Error during Streamlit execution: {stderr}")
 
             if os.path.exists("extracted_streamlit_app.py"):
                 os.remove("extracted_streamlit_app.py")

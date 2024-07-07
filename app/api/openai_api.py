@@ -9,7 +9,6 @@ router = APIRouter()
 @router.post("/batch/{batch_name}")
 def send_batch(batch_name: str, open_ai_service: OpenAIService = Depends()):
     open_ai_service.send_batch(batch_name)
-    OpenAIService.delete_batch_file(batch_name)
 
 
 @router.get("/batch/status/{batch_id}")

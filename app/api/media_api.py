@@ -121,7 +121,7 @@ def store_all_articles_from_news_api(request: NewsApiRequest,
                                      media_service: MediaService = Depends(),
                                      news_api_service: NewsApiService = Depends(),
                                      open_ai_service: OpenAIService = Depends()):
-    page_number = 1
+    page_number = request.page_number
     response = news_api_service.get_articles(request.topic, page_number, request.start_date, request.end_date)
     articles = response.get("news")
     #this makes sure all articles are retrievedsend_request
@@ -134,8 +134,7 @@ def store_all_articles_from_news_api(request: NewsApiRequest,
             open_ai_service.create_summary(document_id, article.get("text"), 100)
 
         page_number += 1
-        #currently stopped at page 7, because we want to have atleast 70 articles of a month
-        if (page_number == 8): break
+        if (page_number == 10): break
         response = news_api_service.get_articles(request.topic, page_number, request.start_date, request.end_date)
         print(response.get("count"))
         articles = response.get("news")

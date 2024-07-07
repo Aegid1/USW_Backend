@@ -126,12 +126,11 @@ class MediaService:
                 continue
         print("all texts were successfully updated.")
 
-    #TODO extract this method into a AnalysisService.py
     def filter_documents_by_time_interval(self, articles, lower_boundary, upper_boundary):
-        # unter 1 Jahr: 1 Tage Abstand -> end_date - start_date < 365
-        # ab 1 Jahr: 2 Tage Abstand ->  364 < end_date - start_date < 730
-        # ab 2 Jahr: 4 Tage Abstand ->  729 < end_date - start_date < 1065
-        # ab 3 Jahr: 8 Tage Abstand -> 1065 < end_date - start_date < 1430
+        # unter 1 Jahr: 2 Tage Abstand -> end_date - start_date < 365
+        # ab 1 Jahr: 4 Tage Abstand ->  364 < end_date - start_date < 730
+        # ab 2 Jahr: 8 Tage Abstand ->  729 < end_date - start_date < 1065
+        # ab 3 Jahr: 10 Tage Abstand -> 1065 < end_date - start_date < 1430
 
         def calculate_time_step(days):
             if days < 365:
