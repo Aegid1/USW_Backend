@@ -3,6 +3,7 @@ import os
 import subprocess
 import time
 import re
+import ast
 from datetime import datetime, timedelta
 
 import yaml
@@ -50,7 +51,7 @@ class OpenAIService:
                         }
 
                     },
-                    "required": ["topic", "user_prompt", "chart_type", "time_period"]
+                    "required": ["topic", "user_prompt", "chart_type", "time_period", "sentiment_categories"]
                 }
             }
         }]
@@ -68,6 +69,21 @@ class OpenAIService:
     def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str,
                                       sentiment_categories: list):
 
+        missing_params = []
+        if not topic:
+            missing_params.append('topic')
+        if not user_prompt:
+            missing_params.append('user_prompt')
+        if not chart_type:
+            missing_params.append('chart_type')
+        if not time_period:
+            missing_params.append('time_period')
+        if not sentiment_categories:
+            missing_params.append('sentiment_categories')
+
+        if missing_params:
+            return (f"The following parameters are missing or invalid: {', '.join(missing_params)}")
+
         print(chart_type)
         print(sentiment_categories)
         print(time_period)
@@ -78,19 +94,20 @@ class OpenAIService:
 
         thread_id = openai_service.create_thread()
 
-        articles = mediaservice.get_articles_by_date(50, topic, lower_boundary, upper_boundary)
-
+        articles = mediaservice.get_articles_by_date(400, topic, lower_boundary, upper_boundary)
+        print(len(articles.get("documents")[0]))
         if chart_type == "timeseries" or chart_type == "time series":
             articles = mediaservice.filter_documents_by_time_interval(articles, lower_boundary, upper_boundary)
 
+        print(len(articles.get("documents")[0]))
         articles_without_date = articles.get("documents")[0]
         for i in range(len(articles.get("metadatas")[0])):
             articles_without_date[i] += " " + articles.get("metadatas")[0][i].get("published")
 
-        articles_divided = OpenAIService.__divide_lists(articles_without_date, 10)
+        articles_divided = OpenAIService.__divide_lists(articles_without_date, int(len(articles.get("documents")[0]) / 5))
 
         results = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=int(len(articles.get("documents")[0]) / 5)) as executor:
             futures = [
                 executor.submit(openai_service.__process_article_list, article_list, user_prompt, sentiment_categories)
                 for
@@ -104,9 +121,16 @@ class OpenAIService:
                 except Exception as exc:
                     print(f"list of articles generated an exception: {exc}")
 
+        flattened_results = []
         #combines the results for one final result
-        request = "Can you generate the python code for me to create a " + chart_type + " with streamlit (make sure to flatten the lists) with the following data: " + "\n" + "\n".join(
-            results)
+        for sublist_str in results:
+            sublist = ast.literal_eval(sublist_str)
+            flattened_results.extend(sublist)
+
+        request = ("Can you generate the python code for me to create a "
+                   + chart_type + " with streamlit with the following data: "
+                   + "\n" +"data = " + str(flattened_results)
+                   )
 
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
@@ -119,7 +143,7 @@ class OpenAIService:
             time.sleep(1)
 
         final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
-
+        print(final_result)
         try:
             extracted_code = OpenAIService.__extract_generated_code(final_result)
             OpenAIService.__execute_generated_code(extracted_code)
@@ -141,7 +165,7 @@ class OpenAIService:
 
         thread_id = openai_service.create_thread()
 
-        articles = mediaservice.get_articles_by_date(200, topic, lower_boundary, upper_boundary)
+        articles = mediaservice.get_articles_by_date(400, topic, lower_boundary, upper_boundary)
 
         if chart_type == "timeseries" or chart_type == "time series":
             articles = mediaservice.filter_documents_by_time_interval(articles, lower_boundary, upper_boundary)
@@ -155,7 +179,7 @@ class OpenAIService:
         results = []
         for article_list in articles_divided:
             result = openai_service.__process_article_list(article_list, user_prompt, sentiment_categories)
-            results.append(result.data[0].content[0].text.value)
+            results.append(result)
 
         request = "Can you generate the python code for me to create a " + chart_type + " with streamlit (make sure to flatten the lists) with the following data: " + "\n" + "\n".join(
             results)
@@ -374,6 +398,7 @@ class OpenAIService:
 
         result = OpenAIService.__extract_analysis_results(result)
         filtered_result = [item for item in result if item[1].lower() in expected_categories]
+        print(str(filtered_result).lower())
 
         return str(filtered_result).lower()
 

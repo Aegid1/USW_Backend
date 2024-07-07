@@ -155,7 +155,6 @@ class MediaService:
         indices_to_remove = []
 
         for index, (text, metadata) in enumerate(zip(texts, metadatas)):
-            print(str(existing_dates))
             published_date = metadata['date_count']
 
             # if it does not comply, it is thrown out
