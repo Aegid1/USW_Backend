@@ -1,20 +1,8 @@
 from fastapi import APIRouter, Depends
-from app.services.ChatService import ChatService
 from app.services.OpenAIService import OpenAIService
 import time
 
 router = APIRouter()
-
-
-def get_chat_service():
-    """
-        Get an instance of ChatService.
-
-        Returns:
-            ChatService: An instance of ChatService.
-        """
-    return ChatService()
-
 
 def get_open_ai_service():
     """

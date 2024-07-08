@@ -3,33 +3,10 @@ from chromadb.utils import embedding_functions
 from app.services.MediaService import MediaService
 from app.services.NewsApiService import NewsApiService
 from app.services.OpenAIService import OpenAIService
-from pydantic import BaseModel
+from app.services.BatchApiService import BatchApiService
+from app.basemodel import Article, Query, NewsApiRequest
 
 router = APIRouter()
-
-
-class NewsApiRequest(BaseModel):
-    start_date: str
-    end_date: str
-    topic: str
-    page_number: int
-
-
-class Query(BaseModel):
-    query: str
-
-
-class ArticleMetadata(BaseModel):
-    keywords: str
-    title: str
-    author: str
-    published: str
-    url: str
-
-
-class Article(BaseModel):
-    content: str
-    metadata: ArticleMetadata
 
 
 def get_media_service():
@@ -135,7 +112,7 @@ def get_articles_from_news_api(request: NewsApiRequest,
 def store_articles_from_news_api(request: NewsApiRequest,
                                  media_service: MediaService = Depends(),
                                  news_api_service: NewsApiService = Depends(),
-                                 open_ai_service: OpenAIService = Depends()):
+                                 batch_api_service: BatchApiService = Depends()):
     """
         Store articles from the News API and process them using OpenAIService.
 
@@ -144,6 +121,7 @@ def store_articles_from_news_api(request: NewsApiRequest,
             media_service (MediaService): The Media service instance.
             news_api_service (NewsApiService): The News API service instance.
             open_ai_service (OpenAIService): The OpenAI service instance.
+            batch_api_service (BatchApiService): The BatchAPI of OpenAI service instance
 
         Returns:
             None
@@ -153,8 +131,8 @@ def store_articles_from_news_api(request: NewsApiRequest,
     for article in articles:
         structured_article = news_api_service.transform_article(article)
         document_id = media_service.store_article("articles", structured_article)
-        open_ai_service.create_keywords(document_id, article.get("text"))
-        open_ai_service.create_summary(document_id, article.get("text"), 100)
+        batch_api_service.create_keywords(document_id, article.get("text"))
+        batch_api_service.create_summary(document_id, article.get("text"), 100)
 
 
 #this is currently only useful for changing the structure of the documents -> later purpose unknown
@@ -178,7 +156,7 @@ def update_date_count_of_all_articles(media_service: MediaService = Depends()):
 def store_all_articles_from_news_api(request: NewsApiRequest,
                                      media_service: MediaService = Depends(),
                                      news_api_service: NewsApiService = Depends(),
-                                     open_ai_service: OpenAIService = Depends()):
+                                     batch_api_service: BatchApiService = Depends()):
     """
         Store all articles from the News API, handling pagination.
 
@@ -187,6 +165,7 @@ def store_all_articles_from_news_api(request: NewsApiRequest,
             media_service (MediaService): The Media service instance.
             news_api_service (NewsApiService): The News API service instance.
             open_ai_service (OpenAIService): The OpenAI service instance.
+            batch_api_service (BatchApiService): The BatchAPI of OpenAI
 
         Returns:
             None
@@ -200,8 +179,8 @@ def store_all_articles_from_news_api(request: NewsApiRequest,
         for article in articles:
             structured_article = news_api_service.transform_article(article)
             document_id = media_service.store_article("articles", structured_article)
-            open_ai_service.create_keywords(document_id, article.get("text"))
-            open_ai_service.create_summary(document_id, article.get("text"), 100)
+            batch_api_service.create_keywords(document_id, article.get("text"))
+            batch_api_service.create_summary(document_id, article.get("text"), 100)
 
         page_number += 1
         if (page_number == 10): break
@@ -297,4 +276,3 @@ def get_specific_article_by_id(collection_name: str, document_id: str, media_ser
         """
     collection = media_service.get_collection(collection_name)
     return media_service.get_article_by_id(collection, document_id)
-

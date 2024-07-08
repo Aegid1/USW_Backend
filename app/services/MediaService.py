@@ -2,7 +2,7 @@ import os
 import chromadb
 import uuid
 import tiktoken
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from enum import Enum
 
