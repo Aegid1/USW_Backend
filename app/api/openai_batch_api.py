@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.services.OpenAIService import OpenAIService
 from app.services.BatchApiService import BatchApiService
 from app.services.MediaService import DocumentType
-from app.utils.batch_utils import get_document_type
+from app.utils.batch_utils import __get_document_type
 
 router = APIRouter()
 
@@ -38,7 +38,7 @@ def check_batch_status(batch_id: str, batch_api_service: BatchApiService = Depen
 
 
 @router.get("/batch/retrieval/{batch_type}")
-def retrieve_batch(batch_type: DocumentType = Depends(get_document_type),
+def retrieve_batch(batch_type: DocumentType = Depends(__get_document_type),
                    batch_api_service: BatchApiService = Depends()):
     """
     Retrieve the content of batches and delete the batch files, where the ids of the batches are stored -> no usage needed anymore

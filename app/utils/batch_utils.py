@@ -3,7 +3,7 @@ from fastapi import HTTPException
 from app.services.MediaService import DocumentType
 
 
-def get_document_type(batch_type: str) -> DocumentType:
+def __get_document_type(batch_type: str) -> DocumentType:
     try:
         return DocumentType[batch_type]
     except KeyError:

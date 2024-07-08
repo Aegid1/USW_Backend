@@ -13,5 +13,5 @@ Backend for USW media compass project
 
 3. Start the main.py file
 
-4. Run the example streamlit graph with ```streamlit run streamlit_graph.py``` <br>
-The graph is then available on  **localhost:8051**
+4. You can run an example streamlit graph with ```streamlit run streamlit_graph.py``` <br>
+   The graph is then available on  **localhost:8051**

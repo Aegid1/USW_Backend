@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.chat_api import router as chat_router
 from app.api.media_api import router as media_router
-from app.api.openai_api import router as openai_router
+from app.api.openai_batch_api import router as openai_router
 
 app = FastAPI()
 
