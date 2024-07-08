@@ -4,7 +4,9 @@ from app.services.MediaService import MediaService
 from app.services.NewsApiService import NewsApiService
 from app.services.OpenAIService import OpenAIService
 from app.services.BatchApiService import BatchApiService
-from app.basemodel import Article, Query, NewsApiRequest
+from app.basemodel.Article import Article
+from app.basemodel.Query import Query
+from app.basemodel.NewsApiRequest import NewsApiRequest
 
 router = APIRouter()
 
