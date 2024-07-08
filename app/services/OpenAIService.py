@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import threading
 import time
 import re
 import ast
@@ -68,7 +69,21 @@ class OpenAIService:
     @staticmethod
     def solve_problem_parallelization(topic: str, user_prompt: str, chart_type: str, time_period: str,
                                       sentiment_categories: list):
+        """
+                Solve a problem/analysis in parallel using multiple threads.
 
+                Parameters:
+                    topic (str): The topic of the user request.
+                    user_prompt (str): The user prompt containing the problem to be solved.
+                    chart_type (str): The type of visualization requested.
+                    time_period (str): The time period to be considered.
+                    sentiment_categories (list): The sentiment categories mentioned in the analysis.
+
+                Returns:
+                    str: The result of the problem-solving process.
+        """
+
+        #check if something is missing and tell the user afterwards
         missing_params = []
         if not topic:
             missing_params.append('topic')
@@ -82,27 +97,37 @@ class OpenAIService:
             missing_params.append('sentiment_categories')
 
         if missing_params:
-            return (f"The following parameters are missing or invalid: {', '.join(missing_params)}")
+            return f"Tell the user that the following parameters are missing or invalid: {', '.join(missing_params)}"
 
         print(chart_type)
         print(sentiment_categories)
         print(time_period)
+        print(topic)
+
+        #check if the provided date is valid or not
+        date_is_valid = OpenAIService.__check_date(time_period)
+        if not date_is_valid:
+            return "Tell the user that the time period is invalid"
+
         lower_boundary, upper_boundary = OpenAIService.__create_date_boundaries(time_period)
 
         mediaservice = MediaService()
         openai_service = OpenAIService()
 
         thread_id = openai_service.create_thread()
+        #check if a time series is wanted -> time series visualization is more complex
+        time_series_synonyms = ["timeseries", "time series", "linechart", "line chart"]
 
-        if chart_type.lower() == "timeseries" or chart_type.lower() == "time series":
+        if chart_type.lower() in time_series_synonyms:
             #we need more data when having a time series -> sometimes multiple articles on one day
-            articles = mediaservice.get_articles_by_date(600, topic, lower_boundary, upper_boundary)
-            print(len(articles.get("documents")[0]))
+            #we want for every day atleast 2 articles, so it is multiplied by 2
+            articles = mediaservice.get_articles_by_date((upper_boundary-lower_boundary) * 2, topic, lower_boundary, upper_boundary)
             articles = mediaservice.filter_documents_by_time_interval(articles, lower_boundary, upper_boundary)
-            print(len(articles.get("documents")[0]))
 
         else:
-            articles = mediaservice.get_articles_by_date(300, topic, lower_boundary, upper_boundary)
+            #gpt 3.5 can only handle up to 200 - 300 articles with 100 words each article -> otherwise it will throw an error therefore * 0.7
+            articles = mediaservice.get_articles_by_date(int((upper_boundary-lower_boundary)*0.7), topic, lower_boundary, upper_boundary)
+
 
         articles_without_date = articles.get("documents")[0]
         for i in range(len(articles.get("metadatas")[0])):
@@ -131,21 +156,17 @@ class OpenAIService:
             sublist = ast.literal_eval(sublist_str)
             flattened_results.extend(sublist)
 
-        # request = ("Can you generate the directly executable python script for me to create a "
-        #            + chart_type + " with streamlit with the following data: "
-        #            + "\n" +"data = " + str(flattened_results)
-        #            + " make sure to use all the provided data, dont cut something off"
-        #            )
-
         request = ("Can you generate the directly executable python script for me to create a "
-                   + chart_type + " with streamlit with like this: "
+                   + chart_type + " with streamlit with a pattern like this, where you have a list of tuples: "
                    + "\n" + "data = [('2024-05-08', '3')]"
                    )
+
         openai_service.send_message_to_thread(thread_id.id, request)
         time.sleep(1)
 
         run = openai_service.execute_thread_without_function_calling(thread_id.id)
 
+        #executes the code generation prompt
         while run.status not in ['completed', 'failed']:
             run = openai_service.retrieve_execution(thread_id.id, run.id)
             print(run.status)
@@ -154,18 +175,36 @@ class OpenAIService:
         final_result = openai_service.retrieve_messages_from_thread(thread_id.id).data[0].content[0].text.value
         try:
             extracted_code = OpenAIService.__extract_generated_code(final_result, flattened_results)
-            OpenAIService.__execute_generated_code(extracted_code)
+            #OpenAIService.__execute_generated_code(extracted_code)
+            print(extracted_code)
+            thread = threading.Thread(target=OpenAIService.__execute_generated_code)
+            thread.start()
+
         except RuntimeError as e:
-            return "Something went wrong with the execution of the generated code"
+            return "Tell the user something went wrong with the execution of the generated code"
 
         return "Here is the desired " + chart_type
 
     @staticmethod
     def solve_problem(topic: str, user_prompt: str, chart_type: str, time_period: str, sentiment_categories: list):
+        """
+                Solve a problem/analysis using a single thread.
+
+                Parameters:
+                    topic (str): The topic of the user request.
+                    user_prompt (str): The user prompt containing the problem to be solved.
+                    chart_type (str): The type of visualization requested.
+                    time_period (str): The time period to be considered.
+                    sentiment_categories (list): The sentiment categories mentioned in the analysis.
+
+                Returns:
+                    str: The result of the problem-solving process.
+        """
 
         print(chart_type)
         print(sentiment_categories)
         print(time_period)
+
         lower_boundary, upper_boundary = OpenAIService.__create_date_boundaries(time_period)
 
         mediaservice = MediaService()
@@ -222,9 +261,25 @@ class OpenAIService:
     }
 
     def create_thread(self):
+        """
+               Create a new thread.
+
+               Returns:
+                   Thread: The created thread.
+        """
         return self.client.beta.threads.create()
 
     def send_message_to_thread(self, thread_id, message_text):
+        """
+                Send a message to a specific thread.
+
+                Parameters:
+                    thread_id (str): The ID of the thread.
+                    message_text (str): The text of the message.
+
+                Returns:
+                    Message: The created message.
+        """
         return self.client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
@@ -232,6 +287,15 @@ class OpenAIService:
         )
 
     def execute_thread(self, thread_id):
+        """
+                Execute a thread with function calling.
+
+                Parameters:
+                    thread_id (str): The ID of the thread.
+
+                Returns:
+                    Run: The created run.
+        """
         return self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant.id,
@@ -239,6 +303,15 @@ class OpenAIService:
         )
 
     def execute_thread_without_function_calling(self, thread_id):
+        """
+                Execute a thread without function calling.
+
+                Parameters:
+                    thread_id (str): The ID of the thread.
+
+                Returns:
+                    Run: The created run.
+        """
         return self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant.id,
@@ -247,13 +320,43 @@ class OpenAIService:
         )
 
     def retrieve_execution(self, thread_id, run_id):
+        """
+                Retrieve the execution status of a run.
+
+                Parameters:
+                    thread_id (str): The ID of the thread.
+                    run_id (str): The ID of the run.
+
+                Returns:
+                    Run: The retrieved run.
+        """
         return self.client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run_id)
 
     def retrieve_messages_from_thread(self, thread_id):
+        """
+                Retrieve messages from a thread.
+
+                Parameters:
+                    thread_id (str): The ID of the thread.
+
+                Returns:
+                    list: A list of messages from the thread.
+        """
         return self.client.beta.threads.messages.list(thread_id=thread_id)
 
     #executes the chosen function
     def submit_tool_outputs(self, thread_id, run_id, tools_to_call):
+        """
+                Submit the tool outputs for a run.
+
+                Parameters:
+                    thread_id (str): The ID of the thread.
+                    run_id (str): The ID of the run.
+                    tools_to_call (list): The list of tools to call.
+
+                Returns:
+                    Run: The updated run with tool outputs submitted.
+        """
         tool_output_array = []
         for tool in tools_to_call:
             output = None
@@ -267,21 +370,24 @@ class OpenAIService:
             if output:
                 tool_output_array.append({"tool_call_id": tool_call_id, "output": output})
 
-            # if function_name == "solve_problem":
-            #     #closes the thread
-            #     # cancelled_run = self.client.beta.threads.runs.cancel(run_id=run_id, thread_id=thread_id)
-            #     # print(cancelled_run)
-            #     #vielleicht hier noch ein kurzer timeout
-            #     return output
-
         return self.client.beta.threads.runs.submit_tool_outputs(
             thread_id=thread_id,
             run_id=run_id,
             tool_outputs=tool_output_array
         )
 
-    #das hier muss an die Batch-API gesendet werden -> eigener Batch
+    #TODO keywords of an article is not used anywhere, maybe delete afterwards
     def create_keywords(self, document_id, text):
+        """
+                Create keywords for a document.
+
+                Parameters:
+                    document_id (str): The ID of the document.
+                    text (str): The text of the document.
+
+                Returns:
+                    None
+        """
         text = "can you just give me 5 keywords for the following text without numbering or similar" + text
 
         request = {
@@ -308,6 +414,17 @@ class OpenAIService:
 
     #das hier muss an die Batch-API gesendet werden -> eigener Batch
     def create_summary(self, document_id: str, text: str, length):
+        """
+                Create a summary for a document.
+
+                Parameters:
+                    document_id (str): The ID of the document.
+                    text (str): The text of the document.
+                    length (int): The maximum length of the summary.
+
+                Returns:
+                    None
+        """
         text = "can you send me a summary of the following text in max. " + str(
             length) + " words without changing the wording of the text: " + text
 
@@ -334,6 +451,15 @@ class OpenAIService:
         return self.__add_to_batch(request, "batch_summary.jsonl")
 
     def send_batch(self, batch_name: str):
+        """
+                Send a batch of requests.
+
+                Parameters:
+                    batch_name (str): The name of the batch file.
+
+                Returns:
+                    None
+        """
         batch_input_file = self.client.files.create(
             file=open(batch_name, "rb"),
             purpose="batch"
@@ -355,6 +481,16 @@ class OpenAIService:
                 file.write('\n' + batch.id)
 
     def retrieve_batch_content(self, batch_id: str, content_type):
+        """
+                Retrieve the content of a batch.
+
+                Parameters:
+                    batch_id (str): The ID of the batch.
+                    content_type (DocumentType): The type of content (SUMMARY or KEYWORDS).
+
+                Returns:
+                    str: The status of the batch if not completed, otherwise None.
+        """
         batch = self.client.batches.retrieve(batch_id)
         if batch.status != "completed":
             return "Your batch is currently not ready and in the state: " + batch.status
@@ -372,12 +508,34 @@ class OpenAIService:
             self.mediaservice.update_collection("articles", document_id, content_type, response)
 
     def check_batch_status(self, batch_id: str):
+        """
+                Check the status of a batch.
+
+                Parameters:
+                    batch_id (str): The ID of the batch.
+
+                Returns:
+                    str: The status of the batch.
+        """
         batch = self.client.batches.retrieve(batch_id)
         return batch.status
 
     def __process_article_list(self, article_list, user_prompt, expected_categories):
+        """
+                Process a list of articles and generate the sub-results for the final result.
+
+                Parameters:
+                    article_list (list): The list of articles to process.
+                    user_prompt (str): The user prompt containing the problem to be solved.
+                    expected_categories (list): The expected sentiment categories.
+
+                Returns:
+                    str: The results of the sentiment analysis.
+        """
         thread = self.create_thread()
         provided_data = "\n\n".join(article_list)
+
+        #prompt for generating the sub-result
         request = ("You are a sentiment analysis assistant" + "with these categories " + str(
             expected_categories) + ", I give you texts and you give me the results on "
                                    " this topic with these categories") + user_prompt + "\n" + provided_data + "\n" + (
@@ -393,10 +551,10 @@ class OpenAIService:
             print(run.status)
             time.sleep(1)
 
-        time.sleep(0.5)
         result = self.retrieve_messages_from_thread(thread.id).data[0].content[0].text.value
         extracted_result = OpenAIService.__extract_analysis_results(result)
 
+        #if the extracted result is bad and the model doesnt give us the result we ask why
         if (len(extracted_result) == 0):
             #this prompt mostly solves the problem, the gpt-model-3.5 seems sometimes a little confused with these types of tasks
             self.send_message_to_thread(thread, "why not? Just use the provided texts by me")
@@ -408,28 +566,56 @@ class OpenAIService:
                 print(run.status)
                 time.sleep(1)
 
-            time.sleep(0.5)
             result = self.retrieve_messages_from_thread(thread.id).data[0].content[0].text.value
 
         result = OpenAIService.__extract_analysis_results(result)
+        #filter out the bad results that dont match the expected results
         filtered_result = [item for item in result if item[1].lower() in expected_categories]
 
         return str(filtered_result).lower()
 
     @staticmethod
     def __divide_lists(data: list, n: int) -> list[list]:
-        """Splits a list into n sublists of equal size"""
+        """
+        Split a list into n sublists of equal size.
+
+        Parameters:
+            data (list): The list to split.
+            n (int): The number of sublists to create.
+
+        Returns:
+            list: A list of sublists.
+        """
         k, m = divmod(len(data), n)
         return [data[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n)]
 
     @staticmethod
     def __add_to_batch(request: dict, file_name: str):
+        """
+                Add a request to a batch file.
+
+                Parameters:
+                    request (dict): The request to add.
+                    file_name (str): The name of the batch file.
+
+                Returns:
+                    None
+        """
         with open(file_name, 'a') as file:
             json_str = json.dumps(request)
             file.write(json_str + '\n')
 
     @staticmethod
     def __extract_analysis_results(analysis: str):
+        """
+                Extract analysis results from a string.
+
+                Parameters:
+                    analysis (str): The analysis string.
+
+                Returns:
+                    list: A list of extracted results.
+        """
         pattern = r'(\d{1,4}[-/]\d{1,2}[-/]\d{2}),\s*(\w+)'
         matches = re.findall(pattern, analysis)
 
@@ -441,6 +627,16 @@ class OpenAIService:
 
     @staticmethod
     def __extract_generated_code(request: str, data):
+        """
+                Extract generated code from a request.
+
+                Parameters:
+                    request (str): The request string.
+                    data (list): The data to include in the code.
+
+                Returns:
+                    str: The extracted code.
+        """
         try:
             code_match = re.search(r'```python\n(.*?)\n```', request, re.DOTALL)
             if code_match:
@@ -452,24 +648,33 @@ class OpenAIService:
                 extracted_code = re.sub(r'data\s*=\s*\[\s*\(.*?\)\s*\]', f'data = {data_str}', extracted_code)
                 print(extracted_code)
 
-                return extracted_code
+                with open("extracted_streamlit_app.py", "w") as code_file:
+                    code_file.write(extracted_code)
+
+                # TODO this name is currently only hard coded
+                return "extracted_streamlit_app.py"
         except Exception as e:
             raise RuntimeError("Error when extracting the generated code") from e
 
     @staticmethod
-    def __execute_generated_code(extracted_code: str):
+    def __execute_generated_code():
+        """
+                Execute the extracted code.
 
+                Parameters:
+                    extracted_code (str): The extracted code to execute.
+
+                Returns:
+                    None
+        """
         try:
-            with open("extracted_streamlit_app.py", "w") as code_file:
-                code_file.write(extracted_code)
-
+            #TODO this name is currently only hard coded
             process = subprocess.Popen(["streamlit", "run", "extracted_streamlit_app.py"],
                                        stdout=subprocess.PIPE,
                                        stderr=subprocess.PIPE
                                        )
-
-            time.sleep(10)
-            process.terminate()
+            #time.sleep(30)
+            #process.terminate()
 
             stdout, stderr = process.communicate()
 
@@ -490,6 +695,15 @@ class OpenAIService:
 
     @staticmethod
     def __create_date_boundaries(time_period: str):
+        """
+                Create date boundaries from a time period string.
+
+                Parameters:
+                    time_period (str): The time period in the format YYYY-MM-DD:YYYY-MM-DD.
+
+                Returns:
+                    tuple: The lower and upper boundaries as days from the initial date.
+        """
         initial_date_str = "2010-01-01"
         initial_date = datetime.strptime(initial_date_str, "%Y-%m-%d").date()
 
@@ -505,6 +719,15 @@ class OpenAIService:
 
     @staticmethod
     def delete_batch_file(batch_type):
+        """
+                Delete a batch file which contains the ids of the batches.
+
+                Parameters:
+                    batch_type (DocumentType): The type of document (SUMMARY or KEYWORDS).
+
+                Returns:
+                    None
+        """
         if batch_type == DocumentType.SUMMARY:
             file_name = "batch_ids_summary"
         else:
@@ -518,6 +741,15 @@ class OpenAIService:
 
     @staticmethod
     def get_batch_ids(batch_type):
+        """
+                Get batch IDs from a file.
+
+                Parameters:
+                    batch_type (DocumentType): The type of document (SUMMARY or KEYWORDS).
+
+                Returns:
+                    list: A list of batch IDs.
+        """
         batch_ids = []
         if batch_type == DocumentType.SUMMARY:
             filename = "batch_ids_summary"
@@ -531,3 +763,42 @@ class OpenAIService:
                     batch_ids.append(batch_id)
         return batch_ids
 
+    @staticmethod
+    def __check_date(time_period):
+        """
+            Check if the provided time period is valid.
+
+            Parameters:
+                time_period (str): The time period in the format 'YYYY-MM-DD:YYYY-MM-DD'.
+
+            Returns:
+                bool: True if the time period is valid, False otherwise.
+                str: Error message if the time period is invalid.
+        """
+        try:
+            start_date_str, end_date_str = time_period.split(':')
+
+            start_date_obj = datetime.strptime(start_date_str, '%Y-%m-%d')
+            end_date_obj = datetime.strptime(end_date_str, '%Y-%m-%d')
+
+            today = datetime.now().date()
+
+            min_year = 2010
+
+            if start_date_obj.date() > today:
+                return False
+            elif start_date_obj.date().year < min_year:
+                return False
+
+            if end_date_obj.date() > today:
+                return False
+            elif end_date_obj.date().year < min_year:
+                return False
+
+            if end_date_obj < start_date_obj:
+                return False
+
+            return True
+
+        except ValueError:
+            return False, "Ungültiges Datumsformat im Zeitraum. Erwartet wird das Format 'YYYY-MM-DD:YYYY-MM-DD'."
